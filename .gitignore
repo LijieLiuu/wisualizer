@@ -1,0 +1,10 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+.DS_Store
+
+# RealityKit binaries and signing are managed locally by each developer.
+/addons/GodotRealityKit/
+
+/builds/*
+!/builds/.gdignore

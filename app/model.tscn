@@ -1,0 +1,86 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://addons/spatial/spatial_volume_3d.gd" id="1"]
+
+[sub_resource type="StandardMaterial3D" id="Edge"]
+shading_mode = 0
+albedo_color = Color(0.35, 0.85, 1, 1)
+
+[sub_resource type="BoxMesh" id="EdgeX"]
+material = SubResource("Edge")
+size = Vector3(1.006, 0.006, 0.006)
+
+[sub_resource type="BoxMesh" id="EdgeY"]
+material = SubResource("Edge")
+size = Vector3(0.006, 1.006, 0.006)
+
+[sub_resource type="BoxMesh" id="EdgeZ"]
+material = SubResource("Edge")
+size = Vector3(0.006, 0.006, 1.006)
+
+[node name="Model" type="Window"]
+own_world_3d = true
+title = "Model"
+visible = false
+placement = 4
+
+[node name="Content" type="Node3D" parent="."]
+
+[node name="Field" type="Node3D" parent="."]
+visible = false
+
+[node name="X0" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 0)
+mesh = SubResource("EdgeX")
+
+[node name="X1" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, 0)
+mesh = SubResource("EdgeX")
+
+[node name="X2" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 1)
+mesh = SubResource("EdgeX")
+
+[node name="X3" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, 1)
+mesh = SubResource("EdgeX")
+
+[node name="Y0" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("EdgeY")
+
+[node name="Y1" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 1)
+mesh = SubResource("EdgeY")
+
+[node name="Y2" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.5, 0)
+mesh = SubResource("EdgeY")
+
+[node name="Y3" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.5, 1)
+mesh = SubResource("EdgeY")
+
+[node name="Z0" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Z1" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Z2" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Z3" type="MeshInstance3D" parent="Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Camera" type="Node3D" parent="."]
+script = ExtResource("1")
+window_size = Vector3(0.6, 0.6, 0.6)
+window_min_size = Vector3(0.3, 0.3, 0.3)
+window_max_size = Vector3(1.5, 1.5, 1.5)
+
+[connection signal="close_requested" from="." to="." method="hide"]
