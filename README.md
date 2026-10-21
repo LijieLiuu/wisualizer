@@ -6,11 +6,20 @@ orbit camera, and are meant to run on Quest later.
 
 ## Run
 
-Use the toolchain snapshot in `~/Developer/wiz-toolchain/` (editor app and
-GodotRealityKit addon; see its README). Copy its `addons/GodotRealityKit` into
-`addons/`; it is local and not tracked. Press F5 for the desktop view, or export
-with the `visionOS` preset and run the generated Xcode project on Apple Vision Pro
-or the visionOS Simulator.
+Wisualizer needs a custom Godot 4.7 build and the GodotRealityKit plugin, both
+from the `arvr4mp` branch of these forks:
+
+- Engine: [zilongpa/godot](https://github.com/zilongpa/godot/tree/arvr4mp).
+  Build the macOS editor and the visionOS export template with SCons.
+- Plugin: [zilongpa/plugins-for-godot](https://github.com/zilongpa/plugins-for-godot/tree/arvr4mp).
+  Build it with SCons as in its `godotrealitykit/documentation/Building.md`,
+  then copy `godotrealitykit/out/addons/GodotRealityKit` into this project's
+  `addons/`. The addon is local and not tracked; it also supplies the visionOS
+  export template.
+
+Open the project in that editor and press F5 for the desktop view, or export
+with the `visionOS` preset and run the generated Xcode project on Apple Vision
+Pro or the visionOS Simulator (set your signing team in Xcode).
 
 ## Use
 
