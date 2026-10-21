@@ -1,0 +1,321 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://app/document.gd" id="1"]
+[ext_resource type="Script" path="res://addons/spatial/spatial_volume_3d.gd" id="2"]
+[ext_resource type="Script" path="res://app/resize_hint.gd" id="4"]
+[ext_resource type="Texture2D" path="res://app/icons/play.svg" id="5"]
+[ext_resource type="Texture2D" path="res://app/icons/pause.svg" id="6"]
+[ext_resource type="Texture2D" path="res://app/icons/notes.svg" id="7"]
+[ext_resource type="Texture2D" path="res://app/icons/settings.svg" id="8"]
+
+[sub_resource type="StandardMaterial3D" id="Edge"]
+shading_mode = 0
+albedo_color = Color(0.35, 0.85, 1, 1)
+
+[sub_resource type="BoxMesh" id="EdgeX"]
+material = SubResource("Edge")
+size = Vector3(1.006, 0.006, 0.006)
+
+[sub_resource type="BoxMesh" id="EdgeY"]
+material = SubResource("Edge")
+size = Vector3(0.006, 1.006, 0.006)
+
+[sub_resource type="BoxMesh" id="EdgeZ"]
+material = SubResource("Edge")
+size = Vector3(0.006, 0.006, 1.006)
+
+[sub_resource type="StyleBoxFlat" id="Round"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.14)
+corner_radius_top_left = 22
+corner_radius_top_right = 22
+corner_radius_bottom_right = 22
+corner_radius_bottom_left = 22
+
+[sub_resource type="StyleBoxFlat" id="RoundHover"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.22)
+corner_radius_top_left = 22
+corner_radius_top_right = 22
+corner_radius_bottom_right = 22
+corner_radius_bottom_left = 22
+
+[sub_resource type="StyleBoxFlat" id="RoundPressed"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.32)
+corner_radius_top_left = 22
+corner_radius_top_right = 22
+corner_radius_bottom_right = 22
+corner_radius_bottom_left = 22
+
+[sub_resource type="StyleBoxEmpty" id="RoundFocus"]
+
+[sub_resource type="ButtonGroup" id="SpeedGroup"]
+
+[node name="Document" type="Node"]
+script = ExtResource("1")
+
+[node name="Model" type="Window" parent="."]
+own_world_3d = true
+title = "Model"
+size = Vector2i(1200, 1200)
+visible = false
+placement = 2
+
+[node name="Content" type="Node3D" parent="Model"]
+
+[node name="Field" type="Node3D" parent="Model"]
+visible = false
+
+[node name="X0" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 0)
+mesh = SubResource("EdgeX")
+
+[node name="X1" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, 0)
+mesh = SubResource("EdgeX")
+
+[node name="X2" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 1)
+mesh = SubResource("EdgeX")
+
+[node name="X3" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, 1)
+mesh = SubResource("EdgeX")
+
+[node name="Y0" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("EdgeY")
+
+[node name="Y1" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 1)
+mesh = SubResource("EdgeY")
+
+[node name="Y2" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.5, 0)
+mesh = SubResource("EdgeY")
+
+[node name="Y3" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.5, 1)
+mesh = SubResource("EdgeY")
+
+[node name="Z0" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Z1" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Z2" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Z3" type="MeshInstance3D" parent="Model/Field"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0.5)
+mesh = SubResource("EdgeZ")
+
+[node name="Volume" type="Node3D" parent="Model"]
+script = ExtResource("2")
+window_size = Vector3(1.5, 1.5, 1.5)
+window_min_size = Vector3(0.4, 0.4, 0.4)
+window_max_size = Vector3(3, 3, 3)
+
+[node name="ResizeHint" type="Node3D" parent="Model/Volume"]
+script = ExtResource("4")
+
+[node name="Controls" type="Window" parent="Model"]
+title = "Controls"
+size = Vector2i(900, 112)
+visible = false
+placement = 6
+ornament_anchor = Vector3(0.5, 1, 1)
+ornament_alignment = 8
+
+[node name="Bar" type="HBoxContainer" parent="Model/Controls"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_right = -16.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Play" type="Button" parent="Model/Controls/Bar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Play or pause"
+theme_override_styles/normal = SubResource("Round")
+theme_override_styles/hover = SubResource("RoundHover")
+theme_override_styles/pressed = SubResource("RoundPressed")
+theme_override_styles/hover_pressed = SubResource("RoundPressed")
+theme_override_styles/focus = SubResource("RoundFocus")
+icon = ExtResource("6")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Frame" type="HSlider" parent="Model/Controls/Bar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(50, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+
+[node name="Count" type="Label" parent="Model/Controls/Bar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(55, 0)
+layout_mode = 2
+text = "0 / 0"
+horizontal_alignment = 1
+
+[node name="NotesButton" type="Button" parent="Model/Controls/Bar"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Show or hide the notes"
+theme_override_styles/normal = SubResource("Round")
+theme_override_styles/hover = SubResource("RoundHover")
+theme_override_styles/pressed = SubResource("RoundPressed")
+theme_override_styles/hover_pressed = SubResource("RoundPressed")
+theme_override_styles/focus = SubResource("RoundFocus")
+toggle_mode = true
+button_pressed = true
+icon = ExtResource("7")
+icon_alignment = 1
+expand_icon = true
+
+[node name="OptionsButton" type="Button" parent="Model/Controls/Bar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Show or hide the options"
+theme_override_styles/normal = SubResource("Round")
+theme_override_styles/hover = SubResource("RoundHover")
+theme_override_styles/pressed = SubResource("RoundPressed")
+theme_override_styles/hover_pressed = SubResource("RoundPressed")
+theme_override_styles/focus = SubResource("RoundFocus")
+toggle_mode = true
+icon = ExtResource("8")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Options" type="Window" parent="Model"]
+title = "Options"
+size = Vector2i(340, 440)
+visible = false
+placement = 6
+ornament_anchor = Vector3(1, 0.5, 0.5)
+
+[node name="Margin" type="MarginContainer" parent="Model/Options"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Column" type="VBoxContainer" parent="Model/Options/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="SpeedLabel" type="Label" parent="Model/Options/Margin/Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Speed"
+
+[node name="Speeds" type="GridContainer" parent="Model/Options/Margin/Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 2
+
+[node name="Speed0" type="Button" parent="Model/Options/Margin/Column/Speeds"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_group = SubResource("SpeedGroup")
+text = "0.5×"
+
+[node name="Speed1" type="Button" parent="Model/Options/Margin/Column/Speeds"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("SpeedGroup")
+text = "1×"
+
+[node name="Speed2" type="Button" parent="Model/Options/Margin/Column/Speeds"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_group = SubResource("SpeedGroup")
+text = "2×"
+
+[node name="Speed3" type="Button" parent="Model/Options/Margin/Column/Speeds"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+button_group = SubResource("SpeedGroup")
+text = "4×"
+
+[node name="FieldBox" type="CheckButton" parent="Model/Options/Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Outline each frame's field brick"
+button_pressed = true
+text = "Field box"
+
+[node name="Notes" type="Window" parent="Model"]
+title = "Notes"
+size = Vector2i(1000, 1200)
+visible = false
+placement = 6
+ornament_anchor = Vector3(0, 0.5, 0.5)
+
+[node name="Margin" type="MarginContainer" parent="Model/Notes"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="Text" type="RichTextLabel" parent="Model/Notes/Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+bbcode_enabled = true
+
+[connection signal="close_requested" from="Model" to="." method="close"]
+[connection signal="resized" from="Model/Volume" to="." method="fit" unbinds=1]
+[connection signal="pressed" from="Model/Controls/Bar/Play" to="." method="toggle_play"]
+[connection signal="value_changed" from="Model/Controls/Bar/Frame" to="." method="seek"]
+[connection signal="toggled" from="Model/Options/Margin/Column/FieldBox" to="." method="update_field" unbinds=1]
+[connection signal="toggled" from="Model/Controls/Bar/NotesButton" to="." method="show_notes"]
+[connection signal="toggled" from="Model/Controls/Bar/OptionsButton" to="." method="show_options"]

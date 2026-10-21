@@ -1,0 +1,152 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://app/launcher.gd" id="1"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2"]
+[ext_resource type="Texture2D" path="res://app/icons/delete.svg" id="3"]
+
+[sub_resource type="StyleBoxFlat" id="Round"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.14)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+
+[sub_resource type="StyleBoxFlat" id="RoundHover"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.22)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+
+[sub_resource type="StyleBoxFlat" id="RoundPressed"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.32)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+
+[sub_resource type="StyleBoxEmpty" id="RoundFocus"]
+
+[node name="Launcher" type="MarginContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+script = ExtResource("1")
+
+[node name="Column" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Logo" type="TextureRect" parent="Column"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+size_flags_horizontal = 4
+texture = ExtResource("2")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Name" type="Label" parent="Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Wisualizer"
+horizontal_alignment = 1
+
+[node name="Version" type="Label" parent="Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Version"
+horizontal_alignment = 1
+
+[node name="Add" type="Button" parent="Column"]
+custom_minimum_size = Vector2(160, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Add ZIP"
+
+[node name="Separator" type="HSeparator" parent="Column"]
+layout_mode = 2
+
+[node name="LibraryTitle" type="Label" parent="Column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Library"
+
+[node name="Empty" type="Label" parent="Column"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "Add a ZIP to start. It's copied here, so you can open it again later."
+autowrap_mode = 3
+
+[node name="Scroll" type="ScrollContainer" parent="Column"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Library" type="VBoxContainer" parent="Column/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Row" type="HBoxContainer" parent="Column/Scroll/Library"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Open" type="Button" parent="Column/Scroll/Library/Row"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ZIP"
+flat = true
+alignment = 0
+text_overrun_behavior = 3
+
+[node name="Delete" type="Button" parent="Column/Scroll/Library/Row"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Delete from the library"
+theme_override_styles/normal = SubResource("Round")
+theme_override_styles/hover = SubResource("RoundHover")
+theme_override_styles/pressed = SubResource("RoundPressed")
+theme_override_styles/focus = SubResource("RoundFocus")
+icon = ExtResource("3")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Files" type="FileDialog" parent="."]
+title = "Open a File"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.zip ; Ansys ZIP")
+use_native_dialog = true
+
+[node name="ConfirmDelete" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Delete from the library?"
+ok_button_text = "Delete"
+
+[connection signal="pressed" from="Column/Add" to="Files" method="popup_centered_ratio"]
+[connection signal="file_selected" from="Files" to="." method="import_zip"]
+[connection signal="confirmed" from="ConfirmDelete" to="." method="delete_pending"]
