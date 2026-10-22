@@ -30,7 +30,7 @@ with a `notes.txt` (Godot BBCode) shows its notes beside the volume.
 
 Resize the volume from its bottom corners; marks there show where when it
 opens. The bar below it plays, pauses and scrubs the frames, and shows or hides
-the notes and the options (speed, field box).
+the notes and the options (speed, debug view).
 
 ## Code
 

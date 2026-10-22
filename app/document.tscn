@@ -1,5 +1,6 @@
 [gd_scene format=3]
 
+[ext_resource type="Script" path="res://app/field_probes.gd" id="field_probes"]
 [ext_resource type="Script" path="res://ui/scrubber.gd" id="scrubber"]
 [ext_resource type="Script" path="res://app/document.gd" id="1"]
 [ext_resource type="Script" path="res://app/field_touch.gd" id="touch"]
@@ -43,6 +44,11 @@ placement = 2
 
 [node name="Content" type="Node3D" parent="Model"]
 unique_name_in_owner = true
+
+[node name="FieldProbes" type="Node3D" parent="Model"]
+unique_name_in_owner = true
+visible = false
+script = ExtResource("field_probes")
 
 [node name="Field" type="Node3D" parent="Model"]
 unique_name_in_owner = true
@@ -238,13 +244,13 @@ text = "4×"
 [node name="Separator" type="VSeparator" parent="Model/Options/Bar"]
 layout_mode = 2
 
-[node name="FieldBox" type="CheckButton" parent="Model/Options/Bar"]
+[node name="Debug" type="CheckButton" parent="Model/Options/Bar"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_vertical = 4
-tooltip_text = "Outline each frame's field brick"
-text = "Field box"
+tooltip_text = "Show the field box, and the field around each controller"
+text = "Debug"
 
 [node name="Notes" type="Window" parent="Model"]
 title = "Notes"
@@ -272,7 +278,7 @@ bbcode_enabled = true
 [connection signal="resized" from="Model/Volume" to="." method="fit" unbinds=1]
 [connection signal="pressed" from="Model/Controls/Bar/Play" to="." method="toggle_play"]
 [connection signal="value_changed" from="Model/Controls/Bar/Frame" to="." method="seek"]
-[connection signal="toggled" from="Model/Options/Bar/FieldBox" to="." method="update_field" unbinds=1]
+[connection signal="toggled" from="Model/Options/Bar/Debug" to="." method="update_field" unbinds=1]
 [connection signal="toggled" from="Model/Controls/Bar/NotesButton" to="." method="show_notes"]
 [connection signal="close_requested" from="Model/Notes" to="." method="close_notes"]
 [connection signal="toggled" from="Model/Controls/Bar/OptionsButton" to="." method="show_options"]

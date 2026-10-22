@@ -24,7 +24,8 @@ const HINT_DELAY := 0.6
 @onready var play_button: Button = %Play
 @onready var slider: HSlider = %Frame
 @onready var counter: Label = %Count
-@onready var field_button: CheckButton = %FieldBox
+@onready var debug_button: CheckButton = %Debug
+@onready var probes: Node3D = %FieldProbes
 @onready var notes_button: Button = %NotesButton
 @onready var options_button: Button = %OptionsButton
 @onready var touch: Node = $FieldTouch
@@ -123,9 +124,12 @@ func open(path: String) -> void:
 	for box in boxes:
 		if box != null:
 			bounds = bounds.merge(box * AABB(Vector3.ZERO, Vector3.ONE))
-	field_button.disabled = boxes.count(null) == boxes.size()
+	debug_button.disabled = boxes.count(null) == boxes.size()
 	touch.volume = volume
 	touch.field = field
+	probes.touch = touch
+	probes.volume = volume
+	probes.field = field
 	slider.max_value = frames.size() - 1
 	seek(0)
 
@@ -184,11 +188,13 @@ func seek(value: float) -> void:
 	update_field()
 
 
-## Shows the current frame's field box if the switch is on. The field can
-## be felt with a controller either way.
+## Shows the current frame's field box, and the field around each
+## controller, if the debug switch is on. The field can be felt with a
+## controller either way.
 func update_field() -> void:
 	var box = boxes[frame]
-	field.visible = field_button.button_pressed and box != null
+	field.visible = debug_button.button_pressed and box != null
+	probes.visible = field.visible
 	if box != null:
 		field.transform = box
 	if box != null and bricks[frame] != null:

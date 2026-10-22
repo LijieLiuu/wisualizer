@@ -28,6 +28,8 @@ var cells := Vector3i.ZERO
 ## The largest byte in any of the document's bricks, so strength compares
 ## across frames.
 var peak := 1
+## Changes each time the brick does.
+var revision := 0
 ## Each controller's seconds until its next tap, or -1 outside the field.
 var _waits := {}
 
@@ -37,6 +39,7 @@ func set_brick(data: PackedByteArray, size: Vector3i, largest: int) -> void:
 	bytes = data
 	cells = size
 	peak = maxi(largest, 1)
+	revision += 1
 
 
 func _process(delta: float) -> void:
@@ -59,14 +62,40 @@ func _process(delta: float) -> void:
 		_waits[controller] = wait
 
 
+## The cell outside the brick, as [method cell_at] returns it.
+const NO_CELL := Vector3i(-1, -1, -1)
+
+
 ## The field's value at the controller's tip, from 0 to 1, or 0 outside it.
 func _sample(controller: XRController3D) -> float:
-	if bytes.is_empty() or not controller.get_has_tracking_data():
+	if not controller.get_has_tracking_data():
 		return 0.0
-	# The pose carries the volume's scale, so the tip is TIP meters ahead.
-	var tip := controller.global_transform * Vector3(0, 0, -TIP)
-	var unit := field.global_transform.affine_inverse() * tip
+	return value_of(cell_at(tip_of(controller)))
+
+
+## Where [param controller] feels the field, in global coordinates. The pose
+## carries the volume's scale, so the tip is TIP meters ahead.
+func tip_of(controller: XRController3D) -> Vector3:
+	return controller.global_transform * Vector3(0, 0, -TIP)
+
+
+## The brick cell holding [param point], given in global coordinates, or
+## [constant NO_CELL] outside the brick or without one.
+func cell_at(point: Vector3) -> Vector3i:
+	if bytes.is_empty():
+		return NO_CELL
+	var unit := field.global_transform.affine_inverse() * point
 	var cell := Vector3i((unit * Vector3(cells)).floor())
-	if cell.x < 0 or cell.y < 0 or cell.z < 0 or cell.x >= cells.x or cell.y >= cells.y or cell.z >= cells.z:
+	return cell if is_inside(cell) else NO_CELL
+
+
+func is_inside(cell: Vector3i) -> bool:
+	return cell.x >= 0 and cell.y >= 0 and cell.z >= 0 and cell.x < cells.x and cell.y < cells.y and cell.z < cells.z
+
+
+## The field's value in [param cell], from 0 to 1 of the document's largest,
+## or 0 outside the brick or where the cell has no value.
+func value_of(cell: Vector3i) -> float:
+	if bytes.is_empty() or not is_inside(cell):
 		return 0.0
 	return minf(float(bytes[cell.x + cells.x * (cell.y + cells.y * cell.z)]) / peak, 1.0)
