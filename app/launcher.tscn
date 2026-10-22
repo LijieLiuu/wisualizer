@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://app/launcher.gd" id="1"]
-[ext_resource type="Texture2D" path="res://icon.svg" id="2"]
+[ext_resource type="Texture2D" path="res://branding/icon.png" id="2"]
 [ext_resource type="Texture2D" path="res://app/icons/delete.svg" id="3"]
 
 [sub_resource type="StyleBoxFlat" id="Round"]
@@ -39,6 +39,14 @@ corner_radius_bottom_left = 20
 
 [sub_resource type="StyleBoxEmpty" id="RoundFocus"]
 
+[sub_resource type="StyleBoxFlat" id="LogoShape"]
+corner_radius_top_left = 36
+corner_radius_top_right = 36
+corner_radius_bottom_right = 36
+corner_radius_bottom_left = 36
+corner_detail = 16
+anti_aliasing_size = 0.5
+
 [node name="Launcher" type="MarginContainer"]
 anchors_preset = 15
 anchor_right = 1.0
@@ -55,10 +63,20 @@ script = ExtResource("1")
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Logo" type="TextureRect" parent="Column"]
+[node name="LogoMask" type="Panel" parent="Column"]
+clip_children = 1
 custom_minimum_size = Vector2(72, 72)
 layout_mode = 2
 size_flags_horizontal = 4
+theme_override_styles/panel = SubResource("LogoShape")
+
+[node name="Logo" type="TextureRect" parent="Column/LogoMask"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 texture = ExtResource("2")
 expand_mode = 1
 stretch_mode = 5

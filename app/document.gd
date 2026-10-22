@@ -11,8 +11,11 @@ const NOTES_FILE := "notes.txt"
 const HINT_DELAY := 0.6
 
 @onready var model: Window = $Model
-@onready var volume: SpatialVolume3D = $Model/Volume
-@onready var field: Node3D = $Model/Field
+## The 3D nodes are found by unique name: platforms may move them within
+## the Window.
+@onready var content: Node3D = %Content
+@onready var volume: SpatialVolume3D = %Volume
+@onready var field: Node3D = %Field
 @onready var controls: Window = $Model/Controls
 @onready var options: Window = $Model/Options
 @onready var notes: Window = $Model/Notes
@@ -31,14 +34,6 @@ var frame := 0
 var playing := false
 var elapsed := 0.0
 var bounds := AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
-
-
-func _ready() -> void:
-	# Window sizes are in pixels; show their content at the app's scale, as
-	# the main window does (twice the pixels on visionOS).
-	var scale := get_window().content_scale_factor
-	for window: Window in [model, controls, options, notes]:
-		window.content_scale_factor = scale
 
 
 func open(path: String) -> void:
@@ -90,7 +85,7 @@ func open(path: String) -> void:
 			# RealityKit needs ordinary blending for imported transparent materials.
 			if material is BaseMaterial3D and material.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS:
 				material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	$Model/Content.add_child(scene_root)
+	content.add_child(scene_root)
 
 	# The generated children follow the combined scene-root order above.
 	var children := scene_root.get_children()
@@ -132,7 +127,7 @@ func show_options(shown: bool) -> void:
 
 
 func show_resize_hint() -> void:
-	$Model/Volume/ResizeHint.play(volume.get_region_size())
+	%ResizeHint.play(volume.get_region_size())
 
 
 func close() -> void:

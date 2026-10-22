@@ -22,6 +22,10 @@ func _ready() -> void:
 	%Version.text = "Version %s" % ProjectSettings.get_setting("application/config/version", "")
 	DirAccess.make_dir_recursive_absolute(LIBRARY)
 	show_library()
+	# ZIPs passed on the command line, after "--", are added as if picked.
+	for argument in OS.get_cmdline_user_args():
+		if argument.get_extension().to_lower() == "zip" and FileAccess.file_exists(argument):
+			import_zip(argument)
 
 
 ## Copies a picked ZIP into the library and opens it.

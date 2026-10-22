@@ -22,7 +22,7 @@ func _init(volume: SpatialVolume3D) -> void:
 	if window != volume.get_tree().root:
 		var screen := DisplayServer.get_primary_screen()
 		var pixels := POINTS_PER_METER * DisplayServer.screen_get_scale(screen)
-		var usable := Vector2(DisplayServer.screen_get_usable_rect(screen).size) * 0.8
+		var usable := Vector2(DisplayServer.screen_get_usable_rect(screen).size) * 0.6
 		var wanted := Vector2(volume.window_size.x, volume.window_size.y) * pixels
 		if usable.x > 0.0 and usable.y > 0.0:
 			wanted *= minf(1.0, minf(usable.x / wanted.x, usable.y / wanted.y))
@@ -38,3 +38,8 @@ func update() -> void:
 ## A desktop window has no physical size; it keeps the size it opened at.
 func get_measured_size() -> Vector3:
 	return _volume.window_size
+
+
+## A desktop has no tracked controllers.
+func get_controllers() -> Array[XRController3D]:
+	return []

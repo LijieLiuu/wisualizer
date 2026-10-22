@@ -14,8 +14,15 @@ config/name="Wisualizer"
 run/main_scene="res://app/launcher.tscn"
 config/version="0.1"
 config/features=PackedStringArray("4.7", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://branding/icon.png"
+boot_splash/bg_color=Color(0.0666667, 0.12549, 0.188235, 1)
+boot_splash/image="res://branding/splash.png"
+boot_splash/stretch_mode=4
 run/main_loop_type.visionos="RealitySceneTree"
+
+[autoload]
+
+SpatialWindows="*res://addons/spatial/spatial_windows.gd"
 
 [display]
 
@@ -23,7 +30,8 @@ window/size/viewport_width=800
 window/size/viewport_height=1040
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/stretch/scale.visionos=2.0
+window/stretch/scale=2.0
+window/subwindows/embed_subwindows=false
 
 [editor_plugins]
 
@@ -32,7 +40,6 @@ enabled=PackedStringArray("res://addons/GodotRealityKit/plugin.cfg")
 [reality_kit]
 
 presentation_style="2D Window"
-handles_game_controller_events=false
 
 [physics]
 
@@ -45,4 +52,4 @@ textures/vram_compression/import_etc2_astc=true
 
 [xr]
 
-visionos/enable_controller_tracking=false
+visionos/enable_controller_tracking=true

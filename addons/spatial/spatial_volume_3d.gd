@@ -5,8 +5,9 @@ extends Node3D
 ## [member window_size] meters. The box is centered on this node.
 ##
 ## Each platform shows the volume its own way. On visionOS, GodotRealityKit
-## opens the Window as a RealityKit volume. Elsewhere, the Window stays an
-## ordinary window, viewed through an orbit camera.
+## opens the Window as a RealityKit volume. In XR, the box is placed in the
+## headset's world. On a desktop, the Window stays an ordinary window, viewed
+## through an orbit camera.
 
 ## Emitted when the volume's physical size changes, such as after the person
 ## resizes it.
@@ -21,6 +22,7 @@ enum KeepAspect {
 
 const RealityKitVolume := preload("reality_kit/reality_kit_volume.gd")
 const DesktopVolume := preload("desktop/desktop_volume.gd")
+const XRVolume := preload("xr/xr_volume.gd")
 
 ## The extent of the box along the [member keep_aspect] axis, in world units.
 @export var size := 5.0:
@@ -53,7 +55,13 @@ func _enter_tree() -> void:
 	# The backend must exist before the Window first shows, because that is
 	# when visionOS decides whether the Window opens as a volume.
 	if _backend == null:
-		_backend = RealityKitVolume.new(self) if RealityKitVolume.is_available() else DesktopVolume.new(self)
+		match SpatialPlatform.current():
+			SpatialPlatform.Kind.VISIONOS:
+				_backend = RealityKitVolume.new(self)
+			SpatialPlatform.Kind.XR:
+				_backend = XRVolume.new(self)
+			_:
+				_backend = DesktopVolume.new(self)
 		_backend.resized.connect(resized.emit)
 	_update()
 
@@ -62,6 +70,15 @@ func _enter_tree() -> void:
 ## the platform reports it.
 func get_measured_size() -> Vector3:
 	return _backend.get_measured_size() if _backend != null else Vector3.ZERO
+
+
+## The tracked controllers that can reach into this volume, one per hand,
+## following their "aim" pose: spatial controllers on visionOS, the headset's
+## controllers in XR, none on a desktop. Their global transforms are in this
+## Window's world, so [method Node3D.to_local] on the volume's content gives
+## where they point within it.
+func get_controllers() -> Array[XRController3D]:
+	return _backend.get_controllers() if _backend != null else []
 
 
 ## The size of the visible box in world units, following the volume's

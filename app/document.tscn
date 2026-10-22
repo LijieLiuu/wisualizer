@@ -72,8 +72,10 @@ visible = false
 placement = 2
 
 [node name="Content" type="Node3D" parent="Model"]
+unique_name_in_owner = true
 
 [node name="Field" type="Node3D" parent="Model"]
+unique_name_in_owner = true
 visible = false
 
 [node name="X0" type="MeshInstance3D" parent="Model/Field"]
@@ -125,12 +127,14 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0.5)
 mesh = SubResource("EdgeZ")
 
 [node name="Volume" type="Node3D" parent="Model"]
+unique_name_in_owner = true
 script = ExtResource("2")
 window_size = Vector3(1.5, 1.5, 1.5)
 window_min_size = Vector3(0.4, 0.4, 0.4)
 window_max_size = Vector3(3, 3, 3)
 
 [node name="ResizeHint" type="Node3D" parent="Model/Volume"]
+unique_name_in_owner = true
 script = ExtResource("4")
 
 [node name="Controls" type="Window" parent="Model"]
