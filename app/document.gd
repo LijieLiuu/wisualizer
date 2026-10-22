@@ -184,11 +184,14 @@ func seek(value: float) -> void:
 	update_field()
 
 
+## Shows the current frame's field box if the switch is on. The field can
+## be felt with a controller either way.
 func update_field() -> void:
-	field.visible = field_button.button_pressed and boxes[frame] != null
-	if field.visible:
-		field.transform = boxes[frame]
-	if field.visible and bricks[frame] != null:
+	var box = boxes[frame]
+	field.visible = field_button.button_pressed and box != null
+	if box != null:
+		field.transform = box
+	if box != null and bricks[frame] != null:
 		touch.set_brick(bricks[frame][0], bricks[frame][1], brick_peak)
 	else:
 		touch.set_brick(PackedByteArray(), Vector3i.ZERO, brick_peak)

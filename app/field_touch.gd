@@ -17,7 +17,8 @@ const TAP_FREQUENCY := Vector2(80.0, 250.0)
 const TAP_DURATION := 0.04
 
 var volume: SpatialVolume3D
-## Its global transform maps a unit cube onto the current brick.
+## Its global transform maps a unit cube onto the current brick, whether or
+## not the field box shows.
 var field: Node3D
 
 ## The current frame's brick: one byte per cell, x fastest, 0 where the
@@ -60,7 +61,7 @@ func _process(delta: float) -> void:
 
 ## The field's value at the controller's tip, from 0 to 1, or 0 outside it.
 func _sample(controller: XRController3D) -> float:
-	if bytes.is_empty() or not field.visible or not controller.get_has_tracking_data():
+	if bytes.is_empty() or not controller.get_has_tracking_data():
 		return 0.0
 	# The pose carries the volume's scale, so the tip is TIP meters ahead.
 	var tip := controller.global_transform * Vector3(0, 0, -TIP)
