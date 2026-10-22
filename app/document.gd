@@ -1,7 +1,8 @@
 extends Node
 ## One opened ZIP, shown as a volume the person can place anywhere. Its
-## notes, if it has any, hang on the volume's left, and its controls sit along
-## its bottom front edge, raised clear of the system window bar below it.
+## notes, if it has any, open in a window of their own beside the volume,
+## which the person can move and resize, and its controls sit along the
+## volume's bottom front edge.
 
 const FPS := 4.0
 const PLAY_ICON := preload("res://app/icons/play.svg")
@@ -26,7 +27,7 @@ const HINT_DELAY := 0.6
 @onready var field_button: CheckButton = %FieldBox
 @onready var notes_button: Button = %NotesButton
 @onready var options_button: Button = %OptionsButton
-@onready var speed_group: ButtonGroup = $Model/Options/Margin/Column/Speeds/Speed0.button_group
+@onready var speed_group: ButtonGroup = $Model/Options/Bar/Speeds/Speed0.button_group
 
 var frames: Array[Array] = []
 ## The brick that maps a unit cube onto each frame's field.
@@ -121,6 +122,12 @@ func open(path: String) -> void:
 
 func show_notes(shown: bool) -> void:
 	notes.visible = shown
+
+
+## The person closed the notes window; the notes button opens it again.
+func close_notes() -> void:
+	notes.hide()
+	notes_button.set_pressed_no_signal(false)
 
 
 func show_options(shown: bool) -> void:

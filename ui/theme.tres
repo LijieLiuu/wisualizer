@@ -1,6 +1,10 @@
 [gd_resource type="Theme" format=3 uid="uid://bnbvhplji1ame"]
 
 [ext_resource type="Texture2D" path="res://ui/icons/knob.svg" id="Knob"]
+[ext_resource type="Texture2D" path="res://ui/icons/switch_on.svg" id="SwitchOn"]
+[ext_resource type="Texture2D" path="res://ui/icons/switch_off.svg" id="SwitchOff"]
+[ext_resource type="Texture2D" path="res://ui/icons/switch_on_disabled.svg" id="SwitchOnDisabled"]
+[ext_resource type="Texture2D" path="res://ui/icons/switch_off_disabled.svg" id="SwitchOffDisabled"]
 [ext_resource type="Texture2D" path="res://ui/icons/knob_disabled.svg" id="KnobDisabled"]
 
 [sub_resource type="SystemFont" id="System"]
@@ -309,8 +313,6 @@ corner_detail = 16
 
 [sub_resource type="StyleBoxEmpty" id="Focus"]
 
-[sub_resource type="StyleBoxEmpty" id="Flat"]
-
 [resource]
 default_font = SubResource("System")
 default_font_size = 17
@@ -332,10 +334,20 @@ Button/styles/hover = SubResource("ButtonHover")
 Button/styles/hover_pressed = SubResource("ButtonPressed")
 Button/styles/normal = SubResource("ButtonNormal")
 Button/styles/pressed = SubResource("ButtonPressed")
-CheckButton/styles/hover = SubResource("Flat")
-CheckButton/styles/hover_pressed = SubResource("Flat")
-CheckButton/styles/normal = SubResource("Flat")
-CheckButton/styles/pressed = SubResource("Flat")
+CheckButton/constants/h_separation = 12
+CheckButton/icons/checked = ExtResource("SwitchOn")
+CheckButton/icons/checked_disabled = ExtResource("SwitchOnDisabled")
+CheckButton/icons/checked_disabled_mirrored = ExtResource("SwitchOnDisabled")
+CheckButton/icons/checked_mirrored = ExtResource("SwitchOn")
+CheckButton/icons/unchecked = ExtResource("SwitchOff")
+CheckButton/icons/unchecked_disabled = ExtResource("SwitchOffDisabled")
+CheckButton/icons/unchecked_disabled_mirrored = ExtResource("SwitchOffDisabled")
+CheckButton/icons/unchecked_mirrored = ExtResource("SwitchOff")
+CheckButton/styles/disabled = SubResource("RowNormal")
+CheckButton/styles/hover = SubResource("RowHover")
+CheckButton/styles/hover_pressed = SubResource("RowHover")
+CheckButton/styles/normal = SubResource("RowNormal")
+CheckButton/styles/pressed = SubResource("RowNormal")
 IconButton/base_type = &"Button"
 IconButton/styles/disabled = SubResource("IconDisabled")
 IconButton/styles/hover = SubResource("IconHover")
