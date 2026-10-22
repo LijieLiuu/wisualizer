@@ -64,6 +64,8 @@ func _add_probe() -> Dictionary:
 	label.no_depth_test = true
 	label.font_size = FONT_SIZE
 	label.outline_size = 12
+	# The label grows up from its position, so it stays clear of the cube.
+	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	add_child(label)
 	return {cube = cube, label = label, cell = touch.NO_CELL, revision = -1}
 
