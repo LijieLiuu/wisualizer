@@ -1,8 +1,8 @@
 extends Node3D
 ## Shows where each controller feels the field, like a game engine's light
 ## probe debug view: the brick cell at the controller's tip as a translucent
-## cube colored by its value, and a label over it with the cell's position
-## and value. Only shows while visible.
+## cube colored by its value, and a white label over it with the cell's
+## position and value. Only shows while visible.
 ##
 ## Lives beside the Window's content, with no transform of its own, so its
 ## local coordinates are the model's.
@@ -85,5 +85,4 @@ func _show(probe: Dictionary, cell: Vector3i) -> void:
 	var label: Label3D = probe.label
 	label.pixel_size = LABEL_HEIGHT / meters_per_unit / FONT_SIZE
 	label.position = center + Vector3.UP * ((unit.basis.get_scale().y / cells.y) * 0.5 + LABEL_GAP / meters_per_unit)
-	label.modulate = color.lerp(Color.WHITE, 0.4)
 	label.text = "(%.1f, %.1f, %.1f)\nstrength %.2f" % [center.x, center.y, center.z, value]
