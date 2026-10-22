@@ -236,7 +236,9 @@ layout_mode = 2
 
 [node name="FieldBox" type="CheckButton" parent="Model/Options/Bar"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+size_flags_vertical = 4
 tooltip_text = "Outline each frame's field brick"
 button_pressed = true
 text = "Field box"
