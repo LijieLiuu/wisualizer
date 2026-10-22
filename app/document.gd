@@ -119,6 +119,7 @@ func open(path: String) -> void:
 	bounds = first.global_transform * first.get_aabb()
 	for mesh in meshes:
 		bounds = bounds.merge(mesh.global_transform * mesh.get_aabb())
+	fit_boxes(bounds)
 	for box in boxes:
 		if box != null:
 			bounds = bounds.merge(box * AABB(Vector3.ZERO, Vector3.ONE))
@@ -202,6 +203,26 @@ func fit() -> void:
 	volume.position = center
 	var required := bounds.size / volume_size
 	volume.size = required[required.max_axis_index()] * volume_size[volume.keep_aspect] * 1.15
+
+
+## Grows each frame's field brick about its center until it spans
+## [param model] along the model's longest side. The exporter writes bricks
+## at a different scale from the geometry: a brick meant to cover a model 80
+## units across says it is 40 across.
+func fit_boxes(model: AABB) -> void:
+	var first := boxes.find_custom(func(box) -> bool: return box != null)
+	if first < 0:
+		return
+	var axis := model.size.max_axis_index()
+	var scale: float = model.size[axis] / (boxes[first] as Transform3D).basis.get_scale()[axis]
+	if is_equal_approx(scale, 1.0):
+		return
+	for index in boxes.size():
+		var box = boxes[index]
+		if box == null:
+			continue
+		var center: Vector3 = box * (Vector3.ONE * 0.5)
+		boxes[index] = Transform3D(Basis.from_scale(Vector3.ONE * scale), center - center * scale) * box
 
 
 ## Reads "KEY: value" lines, such as "BRICK ORIGIN: -20 -20 -20".
