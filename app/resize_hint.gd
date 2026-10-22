@@ -6,7 +6,7 @@ extends Node3D
 ## Lives under the volume, so it sits on the box the volume shows.
 
 ## Seconds the marks stay still before they bounce.
-const HOLD_TIME := 3.0
+const HOLD_TIME := 1.0
 const BOUNCES := 3
 const BOUNCE_TIME := 0.7
 ## How far the marks bounce out, as a fraction of the box. They rest this

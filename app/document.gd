@@ -1,6 +1,7 @@
 extends Node
 ## One opened ZIP, shown as a volume the person can place anywhere. Its
-## notes, if it has any, hang on the volume's left, and its controls below it.
+## notes, if it has any, hang on the volume's left, and its controls sit along
+## its bottom front edge, raised clear of the system window bar below it.
 
 const FPS := 4.0
 const PLAY_ICON := preload("res://app/icons/play.svg")

@@ -40,6 +40,7 @@ the notes and the options (speed, field box).
 | `app/document.gd`, `app/document.tscn` | One opened ZIP: volume, notes, controls and options ornaments |
 | `app/resize_hint.gd` | Corner marks that show the volume can be resized |
 | `app/icons/` | Button icons ([IconPark](https://iconpark.oceanengine.com/)) |
+| `ui/` | The app's look: `theme.tres` (SwiftUI-style buttons, sliders and scroll bars) and custom controls such as `Scrubber` |
 | `branding/` | App icon layers, boot splash and `generate.gd`, which draws them from `branding/assets/` (`godot --path . -s branding/generate.gd`) |
 | `addons/spatial/` | `SpatialVolume3D`: a RealityKit volume on visionOS, an orbit camera elsewhere |
 

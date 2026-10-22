@@ -1,0 +1,380 @@
+[gd_resource type="Theme" format=3 uid="uid://bnbvhplji1ame"]
+
+[ext_resource type="Texture2D" path="res://ui/icons/knob.svg" id="Knob"]
+[ext_resource type="Texture2D" path="res://ui/icons/knob_disabled.svg" id="KnobDisabled"]
+
+[sub_resource type="SystemFont" id="System"]
+font_names = PackedStringArray("SF Pro", ".AppleSystemUIFont", "Inter", "Noto Sans")
+
+[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.1)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ButtonHover"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.16)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.3)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ButtonDisabled"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.05)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="IconNormal"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.1)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="IconHover"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.16)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="IconPressed"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.3)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="IconDisabled"]
+content_margin_left = 10.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(1, 1, 1, 0.05)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="SliderTrack"]
+content_margin_top = 14.0
+content_margin_bottom = 14.0
+bg_color = Color(1, 1, 1, 0.18)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="Hidden"]
+content_margin_top = 14.0
+content_margin_bottom = 14.0
+bg_color = Color(1, 1, 1, 0)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="ImageTexture" id="NoGrabber"]
+
+[sub_resource type="StyleBoxFlat" id="SliderFill"]
+content_margin_top = 14.0
+content_margin_bottom = 14.0
+bg_color = Color(1, 1, 1, 0.55)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="SliderFillHover"]
+content_margin_top = 14.0
+content_margin_bottom = 14.0
+bg_color = Color(1, 1, 1, 0.65)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="SliderFillPressed"]
+content_margin_top = 14.0
+content_margin_bottom = 14.0
+bg_color = Color(1, 1, 1, 0.75)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="SliderFillDisabled"]
+content_margin_top = 14.0
+content_margin_bottom = 14.0
+bg_color = Color(1, 1, 1, 0.2)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="RowNormal"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="RowHover"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.08)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="RowPressed"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.16)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="VScrollGrabber"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.35)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="VScrollGrabberHover"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.55)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="VScrollGrabberPressed"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.7)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="HScrollGrabber"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.35)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="HScrollGrabberHover"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.55)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="HScrollGrabberPressed"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.7)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ScrollTrack"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(1, 1, 1, 0)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+
+[sub_resource type="StyleBoxEmpty" id="Focus"]
+
+[sub_resource type="StyleBoxEmpty" id="Flat"]
+
+[resource]
+default_font = SubResource("System")
+default_font_size = 17
+Button/colors/font_color = Color(1, 1, 1, 1)
+Button/colors/font_disabled_color = Color(1, 1, 1, 0.35)
+Button/colors/font_focus_color = Color(1, 1, 1, 1)
+Button/colors/font_hover_color = Color(1, 1, 1, 1)
+Button/colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+Button/colors/font_pressed_color = Color(1, 1, 1, 1)
+Button/colors/icon_normal_color = Color(1, 1, 1, 1)
+Button/colors/icon_hover_color = Color(1, 1, 1, 1)
+Button/colors/icon_pressed_color = Color(1, 1, 1, 1)
+Button/colors/icon_hover_pressed_color = Color(1, 1, 1, 1)
+Button/colors/icon_focus_color = Color(1, 1, 1, 1)
+Button/colors/icon_disabled_color = Color(1, 1, 1, 0.35)
+Button/styles/disabled = SubResource("ButtonDisabled")
+Button/styles/focus = SubResource("Focus")
+Button/styles/hover = SubResource("ButtonHover")
+Button/styles/hover_pressed = SubResource("ButtonPressed")
+Button/styles/normal = SubResource("ButtonNormal")
+Button/styles/pressed = SubResource("ButtonPressed")
+CheckButton/styles/hover = SubResource("Flat")
+CheckButton/styles/hover_pressed = SubResource("Flat")
+CheckButton/styles/normal = SubResource("Flat")
+CheckButton/styles/pressed = SubResource("Flat")
+IconButton/base_type = &"Button"
+IconButton/styles/disabled = SubResource("IconDisabled")
+IconButton/styles/hover = SubResource("IconHover")
+IconButton/styles/hover_pressed = SubResource("IconPressed")
+IconButton/styles/normal = SubResource("IconNormal")
+IconButton/styles/pressed = SubResource("IconPressed")
+HSlider/icons/grabber = ExtResource("Knob")
+HSlider/icons/grabber_highlight = ExtResource("Knob")
+HSlider/styles/grabber_area = SubResource("SliderFill")
+HSlider/styles/grabber_area_highlight = SubResource("SliderFill")
+HSlider/styles/slider = SubResource("SliderTrack")
+Scrubber/base_type = &"HSlider"
+Scrubber/constants/knob_inset = 2
+Scrubber/icons/grabber = SubResource("NoGrabber")
+Scrubber/icons/grabber_disabled = SubResource("NoGrabber")
+Scrubber/icons/grabber_highlight = SubResource("NoGrabber")
+Scrubber/icons/knob = ExtResource("Knob")
+Scrubber/icons/knob_disabled = ExtResource("KnobDisabled")
+Scrubber/styles/fill = SubResource("SliderFill")
+Scrubber/styles/fill_disabled = SubResource("SliderFillDisabled")
+Scrubber/styles/fill_hover = SubResource("SliderFillHover")
+Scrubber/styles/fill_pressed = SubResource("SliderFillPressed")
+Scrubber/styles/grabber_area = SubResource("Focus")
+Scrubber/styles/grabber_area_highlight = SubResource("Focus")
+Scrubber/styles/slider = SubResource("Hidden")
+Scrubber/styles/track = SubResource("SliderTrack")
+HScrollBar/styles/grabber = SubResource("HScrollGrabber")
+HScrollBar/styles/grabber_highlight = SubResource("HScrollGrabberHover")
+HScrollBar/styles/grabber_pressed = SubResource("HScrollGrabberPressed")
+HScrollBar/styles/scroll = SubResource("ScrollTrack")
+HScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
+VScrollBar/styles/grabber = SubResource("VScrollGrabber")
+VScrollBar/styles/grabber_highlight = SubResource("VScrollGrabberHover")
+VScrollBar/styles/grabber_pressed = SubResource("VScrollGrabberPressed")
+VScrollBar/styles/scroll = SubResource("ScrollTrack")
+VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
+ListRow/base_type = &"Button"
+ListRow/styles/disabled = SubResource("RowNormal")
+ListRow/styles/hover = SubResource("RowHover")
+ListRow/styles/hover_pressed = SubResource("RowPressed")
+ListRow/styles/normal = SubResource("RowNormal")
+ListRow/styles/pressed = SubResource("RowPressed")

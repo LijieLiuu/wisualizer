@@ -4,41 +4,6 @@
 [ext_resource type="Texture2D" path="res://branding/icon.png" id="2"]
 [ext_resource type="Texture2D" path="res://app/icons/delete.svg" id="3"]
 
-[sub_resource type="StyleBoxFlat" id="Round"]
-content_margin_left = 10.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-bg_color = Color(1, 1, 1, 0.14)
-corner_radius_top_left = 20
-corner_radius_top_right = 20
-corner_radius_bottom_right = 20
-corner_radius_bottom_left = 20
-
-[sub_resource type="StyleBoxFlat" id="RoundHover"]
-content_margin_left = 10.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-bg_color = Color(1, 1, 1, 0.22)
-corner_radius_top_left = 20
-corner_radius_top_right = 20
-corner_radius_bottom_right = 20
-corner_radius_bottom_left = 20
-
-[sub_resource type="StyleBoxFlat" id="RoundPressed"]
-content_margin_left = 10.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-bg_color = Color(1, 1, 1, 0.32)
-corner_radius_top_left = 20
-corner_radius_top_right = 20
-corner_radius_bottom_right = 20
-corner_radius_bottom_left = 20
-
-[sub_resource type="StyleBoxEmpty" id="RoundFocus"]
-
 [sub_resource type="StyleBoxFlat" id="LogoShape"]
 corner_radius_top_left = 36
 corner_radius_top_right = 36
@@ -135,20 +100,17 @@ theme_override_constants/separation = 8
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
+theme_type_variation = &"ListRow"
 text = "ZIP"
-flat = true
 alignment = 0
 text_overrun_behavior = 3
 
 [node name="Delete" type="Button" parent="Column/Scroll/Library/Row"]
+theme_type_variation = &"IconButton"
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Delete from the library"
-theme_override_styles/normal = SubResource("Round")
-theme_override_styles/hover = SubResource("RoundHover")
-theme_override_styles/pressed = SubResource("RoundPressed")
-theme_override_styles/focus = SubResource("RoundFocus")
 icon = ExtResource("3")
 icon_alignment = 1
 expand_icon = true
