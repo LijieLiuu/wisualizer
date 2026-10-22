@@ -205,10 +205,11 @@ func fit() -> void:
 	volume.size = required[required.max_axis_index()] * volume_size[volume.keep_aspect] * 1.15
 
 
-## Grows each frame's field brick about its center until it spans
-## [param model] along the model's longest side. The exporter writes bricks
-## at a different scale from the geometry: a brick meant to cover a model 80
-## units across says it is 40 across.
+## Scales each frame's field brick about its center until it spans
+## [param model] along the model's longest side. EnSight doesn't say what
+## scale it writes bricks at, and it isn't the geometry's: the Hall sensor's
+## brick says it is 40 across, around a model 80 across. So the scale comes
+## from the model itself rather than from a fixed factor.
 func fit_boxes(model: AABB) -> void:
 	var first := boxes.find_custom(func(box) -> bool: return box != null)
 	if first < 0:
