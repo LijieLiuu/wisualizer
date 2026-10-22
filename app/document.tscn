@@ -108,7 +108,7 @@ title = "Controls"
 size = Vector2i(900, 112)
 visible = false
 placement = 6
-ornament_anchor = Vector3(0.5, 0.95, 1)
+ornament_anchor = Vector3(0.5, 1, 1)
 ornament_alignment = 8
 
 [node name="Bar" type="HBoxContainer" parent="Model/Controls"]
