@@ -4,10 +4,10 @@ extends RefCounted
 ## in step.
 ##
 ## It also adds an XROrigin3D with a controller per hand. GodotRealityKit
-## tracks spatial controllers, such as PlayStation VR2 Sense, in the volume
-## whose Window holds the current XROrigin3D, so the volume the person last
-## opened or focused takes the controllers. These nodes exist only on visionOS;
-## the XR layout brings its own origin and controllers.
+## tracks spatial controllers, such as PlayStation VR2 Sense, in every volume
+## whose Window holds an XROrigin3D, on trackers named after the Window's ID,
+## so each open volume sees them in its own space. These nodes exist only on
+## visionOS; the XR layout brings its own origin and controllers.
 
 signal resized(size: Vector3)
 
@@ -35,17 +35,16 @@ func _init(volume: SpatialVolume3D) -> void:
 	for hand in [&"left_hand", &"right_hand"]:
 		var controller := XRController3D.new()
 		controller.name = "LeftHand" if hand == &"left_hand" else "RightHand"
-		controller.tracker = hand
 		controller.pose = &"aim"
+		controller.show_when_tracked = true
 		controller.add_child(_ray_mesh())
 		if OS.is_debug_build():
 			controller.button_pressed.connect(_on_button.bind(controller, true))
 			controller.button_released.connect(_on_button.bind(controller, false))
 		_origin.add_child(controller)
 		_controllers.append(controller)
-	var window := volume.get_window()
-	window.visibility_changed.connect(_take_controllers)
-	window.focus_entered.connect(_take_controllers)
+	# A Window gets its ID when it opens.
+	volume.get_window().visibility_changed.connect(_name_trackers, CONNECT_DEFERRED)
 
 
 func update() -> void:
@@ -64,9 +63,13 @@ func get_controllers() -> Array[XRController3D]:
 	return _controllers
 
 
-func _take_controllers() -> void:
-	if _volume.get_window().visible and _origin.is_inside_tree():
-		_origin.current = true
+## Follows the plugin's naming of a Window's trackers: "left_hand_<id>".
+func _name_trackers() -> void:
+	var id := _volume.get_window().get_window_id()
+	if id == DisplayServer.INVALID_WINDOW_ID:
+		return
+	_controllers[0].tracker = StringName("left_hand_%d" % id)
+	_controllers[1].tracker = StringName("right_hand_%d" % id)
 
 
 ## Lets a device test confirm that button input arrives, in the Xcode console.

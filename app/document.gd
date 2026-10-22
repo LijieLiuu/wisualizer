@@ -27,11 +27,16 @@ const HINT_DELAY := 0.6
 @onready var field_button: CheckButton = %FieldBox
 @onready var notes_button: Button = %NotesButton
 @onready var options_button: Button = %OptionsButton
+@onready var touch: Node = $FieldTouch
 @onready var speed_group: ButtonGroup = $Model/Options/Bar/Speeds/Speed0.button_group
 
 var frames: Array[Array] = []
 ## The brick that maps a unit cube onto each frame's field.
 var boxes: Array = []
+## Each frame's brick values and cell counts, or null without a field.
+var bricks: Array = []
+## The largest value in any brick.
+var brick_peak := 0
 var frame := 0
 var playing := false
 var elapsed := 0.0
@@ -44,7 +49,8 @@ func open(path: String) -> void:
 	zip.open(path)
 	var data := PackedByteArray()
 	var text := ""
-	var bricks := {}
+	var metas := {}
+	var blobs := {}
 	for file in zip.get_files():
 		if file.get_extension().to_lower() == "glb":
 			data = zip.read_file(file)
@@ -58,8 +64,10 @@ func open(path: String) -> void:
 			var meta := read_meta(bytes)
 			if meta.has("TIME") and meta.has("BRICK ORIGIN"):
 				var axes := Basis(vector(meta["BRICK X_AXIS"]), vector(meta["BRICK Y_AXIS"]), vector(meta["BRICK Z_AXIS"]))
-				var brick := Transform3D(axes * Basis.from_scale(vector(meta["BRICK SIZE"])), vector(meta["BRICK ORIGIN"]))
-				bricks[meta["TIME"].to_float()] = brick
+				meta["box"] = Transform3D(axes * Basis.from_scale(vector(meta["BRICK SIZE"])), vector(meta["BRICK ORIGIN"]))
+				metas[meta["TIME"].to_float()] = meta
+		else:
+			blobs[file.get_file()] = bytes
 	zip.close()
 
 	var document := GLTFDocument.new()
@@ -74,10 +82,21 @@ func open(path: String) -> void:
 		var time: float = scene.get("extensions", {}).get("ANSYS_scene_timevalue", {}).get("timevalue", NAN)
 		# A field belongs to the scene with the same time.
 		var box = null
-		for brick_time in bricks:
+		var brick = null
+		for brick_time in metas:
 			if is_equal_approx(brick_time, time):
-				box = bricks[brick_time]
+				var meta: Dictionary = metas[brick_time]
+				box = meta["box"]
+				# The data file is named by the exporting machine's path.
+				var blob: PackedByteArray = blobs.get(meta.get("DATA FILE", "").replace("\\", "/").get_file(), PackedByteArray())
+				var cells := Vector3i(vector(meta.get("DATA SIZE", "0 0 0")))
+				if meta.get("DATA FORMAT") == "BYTES" and blob.size() == cells.x * cells.y * cells.z:
+					brick = [blob, cells]
+					var sorted := blob.duplicate()
+					sorted.sort()
+					brick_peak = maxi(brick_peak, sorted[-1])
 		boxes.append(box)
+		bricks.append(brick)
 	state.root_nodes = roots
 	var scene_root := document.generate_scene(state)
 	var meshes := scene_root.find_children("*", "MeshInstance3D", true, false)
@@ -104,6 +123,8 @@ func open(path: String) -> void:
 		if box != null:
 			bounds = bounds.merge(box * AABB(Vector3.ZERO, Vector3.ONE))
 	field_button.disabled = boxes.count(null) == boxes.size()
+	touch.volume = volume
+	touch.field = field
 	slider.max_value = frames.size() - 1
 	seek(0)
 
@@ -166,6 +187,10 @@ func update_field() -> void:
 	field.visible = field_button.button_pressed and boxes[frame] != null
 	if field.visible:
 		field.transform = boxes[frame]
+	if field.visible and bricks[frame] != null:
+		touch.set_brick(bricks[frame][0], bricks[frame][1], brick_peak)
+	else:
+		touch.set_brick(PackedByteArray(), Vector3i.ZERO, brick_peak)
 
 
 func fit() -> void:
