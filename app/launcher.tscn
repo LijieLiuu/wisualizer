@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://app/launcher.gd" id="1"]
 [ext_resource type="Texture2D" path="res://branding/icon.png" id="2"]
 [ext_resource type="Texture2D" path="res://app/icons/delete.svg" id="3"]
+[ext_resource type="Texture2D" path="res://app/icons/edit.svg" id="4"]
 
 [sub_resource type="StyleBoxFlat" id="LogoShape"]
 corner_radius_top_left = 36
@@ -62,8 +63,17 @@ horizontal_alignment = 1
 [node name="Add" type="Button" parent="Column"]
 custom_minimum_size = Vector2(160, 44)
 layout_mode = 2
+tooltip_text = "Copy a ZIP into the library and open it"
 size_flags_horizontal = 4
 text = "Add ZIP"
+
+[node name="New" type="Button" parent="Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(160, 44)
+layout_mode = 2
+size_flags_horizontal = 4
+tooltip_text = "Make a ZIP: import GLBs, bricks and images, and write the notes"
+text = "New…"
 
 [node name="Separator" type="HSeparator" parent="Column"]
 layout_mode = 2
@@ -105,6 +115,16 @@ text = "ZIP"
 alignment = 0
 text_overrun_behavior = 3
 
+[node name="Edit" type="Button" parent="Column/Scroll/Library/Row"]
+theme_type_variation = &"IconButton"
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Edit in a workspace"
+icon = ExtResource("4")
+icon_alignment = 1
+expand_icon = true
+
 [node name="Delete" type="Button" parent="Column/Scroll/Library/Row"]
 theme_type_variation = &"IconButton"
 custom_minimum_size = Vector2(40, 40)
@@ -119,14 +139,35 @@ expand_icon = true
 title = "Open a File"
 file_mode = 0
 access = 2
-filters = PackedStringArray("*.zip ; Ansys ZIP")
+filters = PackedStringArray("*.zip ; ZIP")
 use_native_dialog = true
+
+[node name="ConfirmNew" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "New ZIP"
+size = Vector2i(720, 200)
+ok_button_text = "Create"
+
+[node name="NewName" type="LineEdit" parent="ConfirmNew"]
+unique_name_in_owner = true
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 48.0
+anchors_preset = 10
+anchor_right = 1.0
+placeholder_text = "Name"
 
 [node name="ConfirmDelete" type="ConfirmationDialog" parent="."]
 unique_name_in_owner = true
+size = Vector2i(880, 200)
+dialog_autowrap = true
 title = "Delete from the library?"
 ok_button_text = "Delete"
 
-[connection signal="pressed" from="Column/Add" to="Files" method="popup_centered_ratio"]
+[connection signal="pressed" from="Column/Add" to="Files" method="popup_centered"]
 [connection signal="file_selected" from="Files" to="." method="import_zip"]
+[connection signal="pressed" from="Column/New" to="." method="ask_new"]
+[connection signal="confirmed" from="ConfirmNew" to="." method="create_new"]
+[connection signal="text_submitted" from="ConfirmNew/NewName" to="." method="create_new" unbinds=1]
 [connection signal="confirmed" from="ConfirmDelete" to="." method="delete_pending"]

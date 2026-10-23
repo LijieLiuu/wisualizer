@@ -20,6 +20,9 @@ hall-sensor.zip
 └── images/                   optional: what the notes show
 ```
 
+The desktop build makes and edits these ZIPs in a workspace; see the README.
+It copies GLBs and bricks into the ZIP as they are.
+
 ## meta.json
 
 ```json

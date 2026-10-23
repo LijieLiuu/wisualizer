@@ -3,7 +3,9 @@ extends MarginContainer
 ## in its own document windows, so several can be open at once.
 
 const Document := preload("res://app/document.tscn")
+const Workspace := preload("res://app/workspace.tscn")
 const Meta := preload("res://app/meta.gd")
+const NativeDialogs := preload("res://app/native_dialogs.gd")
 ## Added ZIPs are copied here, so they can be opened again after the app
 ## restarts without access to where they came from.
 const LIBRARY := "user://library"
@@ -17,11 +19,15 @@ const COPY_CHUNK := 1 << 20
 @onready var confirm_delete: ConfirmationDialog = %ConfirmDelete
 
 var _pending_delete := ""
+## ZIPs are made on a computer, where EnSight's exports are.
+var _editing := OS.has_feature("pc")
 
 
 func _ready() -> void:
 	%Version.text = "Version %s" % ProjectSettings.get_setting("application/config/version", "")
 	DirAccess.make_dir_recursive_absolute(LIBRARY)
+	%New.visible = _editing
+	NativeDialogs.apply_to(self)
 	show_library()
 	# ZIPs passed on the command line, after "--", are added as if picked.
 	for argument in OS.get_cmdline_user_args():
@@ -78,9 +84,41 @@ func _in_library(path: String) -> bool:
 	return ProjectSettings.globalize_path(path).simplify_path().get_base_dir() == ProjectSettings.globalize_path(LIBRARY).simplify_path()
 
 
+## Asks for a new ZIP's name, then opens an empty workspace for it.
+func ask_new() -> void:
+	%NewName.text = ""
+	%ConfirmNew.popup_centered()
+	%NewName.grab_focus()
+
+
+func create_new() -> void:
+	var name: String = %NewName.text.strip_edges().validate_filename()
+	if name.is_empty():
+		return
+	edit_zip(LIBRARY.path_join(name + ".zip"))
+
+
+## Opens the ZIP at [param path] in a workspace; a new one if it isn't there yet.
+func edit_zip(path: String) -> void:
+	var workspace := Workspace.instantiate()
+	add_child(workspace)
+	workspace.saved.connect(_on_workspace_saved)
+	var error: String = workspace.start(path)
+	if not error.is_empty():
+		workspace.queue_free()
+		show_error("Can't edit %s" % path.get_file().get_basename(), error)
+
+
+func _on_workspace_saved(path: String, play: bool) -> void:
+	if play:
+		open_zip(path)
+	else:
+		show_library()
+
+
 ## Tells the person what went wrong, with the system's alert where there is one.
 func show_error(title: String, message: String) -> void:
-	if DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG):
+	if NativeDialogs.alerts():
 		DisplayServer.dialog_show(title, message, PackedStringArray(["OK"]), func(_button: int) -> void: pass)
 	else:
 		var alert := AcceptDialog.new()
@@ -98,7 +136,7 @@ func show_error(title: String, message: String) -> void:
 func ask_delete(path: String) -> void:
 	_pending_delete = path
 	var message := "%s is removed from the library. The original file isn't affected." % path.get_file().get_basename()
-	if DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG):
+	if NativeDialogs.alerts():
 		DisplayServer.dialog_show(confirm_delete.title, message, PackedStringArray(["Delete", "Cancel"]), _on_delete_answered, 0, 1)
 	else:
 		confirm_delete.dialog_text = message
@@ -147,6 +185,10 @@ func show_library() -> void:
 		row.visible = true
 		var open_button := row.get_node("Open") as Button
 		open_button.text = path.get_file().get_basename()
+		open_button.tooltip_text = "Open %s" % path.get_file()
 		open_button.pressed.connect(open_zip.bind(path))
+		var edit_button := row.get_node("Edit") as Button
+		edit_button.visible = _editing
+		edit_button.pressed.connect(edit_zip.bind(path))
 		(row.get_node("Delete") as Button).pressed.connect(ask_delete.bind(path))
 		library_list.add_child(row)

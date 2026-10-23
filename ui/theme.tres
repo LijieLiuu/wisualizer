@@ -311,6 +311,194 @@ corner_radius_bottom_right = 999
 corner_radius_bottom_left = 999
 corner_detail = 16
 
+[sub_resource type="StyleBoxFlat" id="FieldNormal"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.08)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="FieldFocus"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+draw_center = false
+bg_color = Color(1, 1, 1, 0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.45)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="FieldReadOnly"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.04)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="TextArea"]
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+bg_color = Color(0, 0, 0, 0.18)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="Card"]
+content_margin_left = 16.0
+content_margin_top = 16.0
+content_margin_right = 16.0
+content_margin_bottom = 16.0
+bg_color = Color(1, 1, 1, 0.06)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="Sidebar"]
+content_margin_left = 12.0
+content_margin_top = 16.0
+content_margin_right = 12.0
+content_margin_bottom = 16.0
+bg_color = Color(0, 0, 0, 0.16)
+corner_radius_top_left = 0
+corner_radius_top_right = 0
+corner_radius_bottom_right = 0
+corner_radius_bottom_left = 0
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ItemHover"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.08)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ItemSelected"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.18)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ListPanel"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(1, 1, 1, 0)
+corner_radius_top_left = 0
+corner_radius_top_right = 0
+corner_radius_bottom_right = 0
+corner_radius_bottom_left = 0
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ProminentNormal"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.92)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ProminentHover"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 1)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ProminentPressed"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.75)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="ProminentDisabled"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 1, 1, 0.3)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 8
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="TitleNormal"]
+content_margin_left = 8.0
+content_margin_top = 6.0
+content_margin_right = 8.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+corner_detail = 8
+anti_aliasing_size = 0.5
+
 [sub_resource type="StyleBoxEmpty" id="Focus"]
 
 [resource]
@@ -390,3 +578,91 @@ ListRow/styles/hover = SubResource("RowHover")
 ListRow/styles/hover_pressed = SubResource("RowPressed")
 ListRow/styles/normal = SubResource("RowNormal")
 ListRow/styles/pressed = SubResource("RowPressed")
+LineEdit/colors/font_color = Color(1, 1, 1, 1)
+LineEdit/colors/font_placeholder_color = Color(1, 1, 1, 0.35)
+LineEdit/colors/caret_color = Color(1, 1, 1, 1)
+LineEdit/colors/selection_color = Color(1, 1, 1, 0.25)
+LineEdit/styles/focus = SubResource("FieldFocus")
+LineEdit/styles/normal = SubResource("FieldNormal")
+LineEdit/styles/read_only = SubResource("FieldReadOnly")
+TextEdit/colors/font_color = Color(1, 1, 1, 0.92)
+TextEdit/colors/font_placeholder_color = Color(1, 1, 1, 0.35)
+TextEdit/colors/caret_color = Color(1, 1, 1, 1)
+TextEdit/colors/selection_color = Color(1, 1, 1, 0.25)
+TextEdit/colors/current_line_color = Color(1, 1, 1, 0.04)
+TextEdit/constants/line_spacing = 6
+TextEdit/styles/focus = SubResource("Focus")
+TextEdit/styles/normal = SubResource("TextArea")
+TextEdit/styles/read_only = SubResource("TextArea")
+ItemList/colors/font_color = Color(1, 1, 1, 0.85)
+ItemList/colors/font_hovered_color = Color(1, 1, 1, 1)
+ItemList/colors/font_selected_color = Color(1, 1, 1, 1)
+ItemList/colors/guide_color = Color(1, 1, 1, 0)
+ItemList/constants/h_separation = 24
+ItemList/constants/v_separation = 16
+ItemList/styles/cursor = SubResource("Focus")
+ItemList/styles/cursor_unfocused = SubResource("Focus")
+ItemList/styles/focus = SubResource("Focus")
+ItemList/styles/hovered = SubResource("ItemHover")
+ItemList/styles/hovered_selected = SubResource("ItemSelected")
+ItemList/styles/hovered_selected_focus = SubResource("ItemSelected")
+ItemList/styles/panel = SubResource("ListPanel")
+ItemList/styles/selected = SubResource("ItemSelected")
+ItemList/styles/selected_focus = SubResource("ItemSelected")
+Tree/colors/font_color = Color(1, 1, 1, 0.85)
+Tree/colors/font_hovered_color = Color(1, 1, 1, 1)
+Tree/colors/font_selected_color = Color(1, 1, 1, 1)
+Tree/colors/guide_color = Color(1, 1, 1, 0.06)
+Tree/colors/title_button_color = Color(1, 1, 1, 0.55)
+Tree/constants/draw_guides = 1
+Tree/constants/v_separation = 6
+Tree/constants/item_margin = 10
+Tree/styles/cursor = SubResource("Focus")
+Tree/styles/cursor_unfocused = SubResource("Focus")
+Tree/styles/focus = SubResource("Focus")
+Tree/styles/hovered = SubResource("ItemHover")
+Tree/styles/hovered_selected = SubResource("ItemSelected")
+Tree/styles/hovered_selected_focus = SubResource("ItemSelected")
+Tree/styles/panel = SubResource("ListPanel")
+Tree/styles/selected = SubResource("ItemSelected")
+Tree/styles/selected_focus = SubResource("ItemSelected")
+Tree/styles/title_button_hover = SubResource("ListPanel")
+Tree/styles/title_button_normal = SubResource("ListPanel")
+Tree/styles/title_button_pressed = SubResource("ListPanel")
+Card/base_type = &"PanelContainer"
+Card/styles/panel = SubResource("Card")
+Sidebar/base_type = &"PanelContainer"
+Sidebar/styles/panel = SubResource("Sidebar")
+Prominent/base_type = &"Button"
+Prominent/colors/font_color = Color(0, 0, 0, 0.9)
+Prominent/colors/font_disabled_color = Color(0, 0, 0, 0.4)
+Prominent/colors/font_focus_color = Color(0, 0, 0, 0.9)
+Prominent/colors/font_hover_color = Color(0, 0, 0, 0.9)
+Prominent/colors/font_hover_pressed_color = Color(0, 0, 0, 0.9)
+Prominent/colors/font_pressed_color = Color(0, 0, 0, 0.9)
+Prominent/styles/disabled = SubResource("ProminentDisabled")
+Prominent/styles/hover = SubResource("ProminentHover")
+Prominent/styles/hover_pressed = SubResource("ProminentPressed")
+Prominent/styles/normal = SubResource("ProminentNormal")
+Prominent/styles/pressed = SubResource("ProminentPressed")
+SidebarRow/base_type = &"Button"
+SidebarRow/colors/font_color = Color(1, 1, 1, 0.75)
+SidebarRow/colors/font_hover_color = Color(1, 1, 1, 1)
+SidebarRow/colors/font_pressed_color = Color(1, 1, 1, 1)
+SidebarRow/colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+SidebarRow/styles/hover = SubResource("RowHover")
+SidebarRow/styles/hover_pressed = SubResource("RowPressed")
+SidebarRow/styles/normal = SubResource("RowNormal")
+SidebarRow/styles/pressed = SubResource("RowPressed")
+Header/base_type = &"Label"
+Header/font_sizes/font_size = 28
+Caption/base_type = &"Label"
+Caption/colors/font_color = Color(1, 1, 1, 0.55)
+Caption/font_sizes/font_size = 13
+FormLabel/base_type = &"Label"
+FormLabel/colors/font_color = Color(1, 1, 1, 0.7)
+FormLabel/font_sizes/font_size = 15
+TitleField/base_type = &"LineEdit"
+TitleField/font_sizes/font_size = 22
+TitleField/styles/normal = SubResource("TitleNormal")
+TitleField/styles/focus = SubResource("FieldFocus")

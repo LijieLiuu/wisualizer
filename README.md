@@ -42,6 +42,27 @@ GLB, or a folder with a GLB per frame, which plays a few frames at a time
 without the whole ZIP in memory. A ZIP can have several models and several
 fields.
 
+### Making one
+
+The desktop build makes ZIPs in a workspace: **New…** in the library starts an
+empty one, and the pencil beside a ZIP opens it there.
+
+- **Frames**: the timeline. Importing GLBs or bricks with solver times fills
+  it in when it's empty; times can be changed, and frames added or removed.
+- **Models**: **Import GLBs…** takes the GLBs EnSight exports. Pick all of a
+  model's GLBs, one per time step, named alike but for the step's number,
+  and they become a model that changes; a GLB on its own becomes one that
+  doesn't. Rename and reorder them here.
+- **Fields**: **Import bricks…** takes the brick headers EnSight writes beside
+  each brick (`*_meta0001` and so on), one field per variable. Set the name,
+  quantity, unit and range. EnSight doesn't say what scale its bricks are at,
+  so the box is fitted to the models; it can also be typed in.
+- **Images**: what the notes show. **Insert into notes** adds an `[img]` tag.
+- **Notes**: BBCode on the left, as it will look on the right.
+
+**Save** writes the ZIP into the library, **Save As…** somewhere else, and
+**Preview** saves and opens it.
+
 ### Notes
 
 In `notes.txt`, `[img]images/flow.png[/img]` shows an image from the ZIP, with
@@ -59,8 +80,12 @@ color. Short formulas can also be plain text, such as `Re = ρUD/μ`.
 
 | Path | Purpose |
 | --- | --- |
-| `app/launcher.gd`, `app/launcher.tscn` | Library: add, open and delete ZIPs |
+| `app/launcher.gd`, `app/launcher.tscn` | Library: add, make, edit, open and delete ZIPs |
 | `app/meta.gd` | Reads a ZIP through its `meta.json` |
+| `app/workspace.gd`, `app/workspace.tscn` | Desktop editor for a ZIP: frames, models, fields, images and notes |
+| `app/draft.gd` | What the workspace edits, and saves as a ZIP |
+| `app/glb_info.gd`, `app/bov.gd` | Read what the workspace needs from a GLB's JSON and an EnSight brick header |
+| `app/native_dialogs.gd` | Whether alerts and file pickers are the system's or Godot's |
 | `app/document.gd`, `app/document.tscn` | One opened ZIP: volume, notes, controls and options ornaments |
 | `app/model_frames.gd` | One model, loaded a few frames at a time |
 | `app/resize_hint.gd` | Corner marks that show the volume can be resized |
@@ -71,5 +96,5 @@ color. Short formulas can also be plain text, such as `Re = ρUD/μ`.
 
 Shared scenes use `Window` and `SpatialVolume3D` only; platform differences stay
 inside `addons/spatial/`. On desktop, a window's ornaments are drawn inside it.
-Deleting asks with the system alert where the platform
-has one (`DisplayServer.dialog_show`).
+Alerts and file pickers are the system's where the platform has them; run with
+`-- --godot-dialogs` to try Godot's own, which other platforms get.
