@@ -1,5 +1,6 @@
 [gd_resource type="Theme" format=3 uid="uid://bnbvhplji1ame"]
 
+[ext_resource type="FontFile" path="res://ui/fonts/Inter.ttf" id="Inter"]
 [ext_resource type="Texture2D" path="res://ui/icons/knob.svg" id="Knob"]
 [ext_resource type="Texture2D" path="res://ui/icons/switch_on.svg" id="SwitchOn"]
 [ext_resource type="Texture2D" path="res://ui/icons/switch_off.svg" id="SwitchOff"]
@@ -7,8 +8,31 @@
 [ext_resource type="Texture2D" path="res://ui/icons/switch_off_disabled.svg" id="SwitchOffDisabled"]
 [ext_resource type="Texture2D" path="res://ui/icons/knob_disabled.svg" id="KnobDisabled"]
 
-[sub_resource type="SystemFont" id="System"]
-font_names = PackedStringArray("SF Pro", ".AppleSystemUIFont", "Inter", "Noto Sans")
+[sub_resource type="FontVariation" id="Regular"]
+base_font = ExtResource("Inter")
+variation_opentype = {
+2003265652: 400
+}
+
+[sub_resource type="FontVariation" id="Bold"]
+base_font = ExtResource("Inter")
+variation_opentype = {
+2003265652: 700
+}
+
+[sub_resource type="FontVariation" id="Italic"]
+base_font = ExtResource("Inter")
+variation_opentype = {
+2003265652: 400
+}
+variation_transform = Transform2D(1, 0.2, 0, 1, 0, 0)
+
+[sub_resource type="FontVariation" id="BoldItalic"]
+base_font = ExtResource("Inter")
+variation_opentype = {
+2003265652: 700
+}
+variation_transform = Transform2D(1, 0.2, 0, 1, 0, 0)
 
 [sub_resource type="StyleBoxFlat" id="ButtonNormal"]
 content_margin_left = 16.0
@@ -502,7 +526,7 @@ anti_aliasing_size = 0.5
 [sub_resource type="StyleBoxEmpty" id="Focus"]
 
 [resource]
-default_font = SubResource("System")
+default_font = SubResource("Regular")
 default_font_size = 17
 Button/colors/font_color = Color(1, 1, 1, 1)
 Button/colors/font_disabled_color = Color(1, 1, 1, 0.35)
@@ -666,3 +690,6 @@ TitleField/base_type = &"LineEdit"
 TitleField/font_sizes/font_size = 22
 TitleField/styles/normal = SubResource("TitleNormal")
 TitleField/styles/focus = SubResource("FieldFocus")
+RichTextLabel/fonts/bold_font = SubResource("Bold")
+RichTextLabel/fonts/bold_italics_font = SubResource("BoldItalic")
+RichTextLabel/fonts/italics_font = SubResource("Italic")

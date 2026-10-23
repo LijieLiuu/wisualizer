@@ -161,7 +161,7 @@ class Art:
 	## The name centered on [param center], its W made of two overlapping
 	## cursive Vs, as on the old splash; [param rest] follows the W.
 	func _draw_name(rest: String, center: Vector2, font_size: int, shadow := true) -> void:
-		var script := _font("Courgette-Regular.ttf")
+		var script := _font(ASSETS + "Courgette-Regular.ttf")
 		var advance := script.get_string_size("V", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 		var second := advance * 0.74
 		var rest_x := second + advance - font_size * 0.04
@@ -189,7 +189,7 @@ class Art:
 		var w := size.x
 		var lines := FileAccess.get_file_as_string(OUTPUT + "captions.txt").strip_edges().split("\n")
 		var margin := w * 0.06
-		var label := _font("Inter.ttf")
+		var label := _font("res://ui/fonts/Inter.ttf")
 		var label_size := int(w * 0.022)
 		var line_height := label.get_height(label_size) * 1.3
 		var y := size.y - margin - line_height * lines.size()
@@ -232,9 +232,9 @@ class Art:
 			data = out
 		return Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, data)
 
-	func _font(file: String) -> FontFile:
+	func _font(path: String) -> FontFile:
 		var font := FontFile.new()
-		font.load_dynamic_font(ProjectSettings.globalize_path(ASSETS + file))
+		font.load_dynamic_font(ProjectSettings.globalize_path(path))
 		return _keep(font)
 
 	func _keep(resource: Resource) -> Resource:
