@@ -24,9 +24,10 @@ Pro or the visionOS Simulator (set your signing team in Xcode).
 
 ## Use
 
-The first window is the library. **Add ZIP** copies a ZIP into it and opens
-it; pick one to open it again, or delete it from the library (the original
-file stays). Each ZIP opens as its own volume, so several can be open at once. A
+The first window is the library. **Open…** opens a ZIP, after asking whether
+to add it to the library, which keeps a copy to open again later; pick one
+there to open it again, or delete it from the library (the original file
+stays). Each ZIP opens as its own volume, so several can be open at once. A
 ZIP with notes shows them beside the volume; see [ZIPs](#zips).
 
 Resize the volume from its bottom corners; marks there show where when it

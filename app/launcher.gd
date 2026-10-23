@@ -19,6 +19,8 @@ const COPY_CHUNK := 1 << 20
 @onready var confirm_delete: ConfirmationDialog = %ConfirmDelete
 
 var _pending_delete := ""
+## The ZIP picked with Open, while the person decides whether to add it.
+var _pending_open := ""
 ## ZIPs are made on a computer, where EnSight's exports are.
 var _editing := OS.has_feature("pc")
 
@@ -27,15 +29,51 @@ func _ready() -> void:
 	%Version.text = "Version %s" % ProjectSettings.get_setting("application/config/version", "")
 	DirAccess.make_dir_recursive_absolute(LIBRARY)
 	%New.visible = _editing
+	# The system's alert has all three answers; Godot's own dialog adds one.
+	%ConfirmAdd.add_button("Open Only", true, "open_only")
 	NativeDialogs.apply_to(self)
 	show_library()
-	# ZIPs passed on the command line, after "--", are added as if picked.
+	# ZIPs passed on the command line, after "--", are added to the library.
 	for argument in OS.get_cmdline_user_args():
 		if argument.get_extension().to_lower() == "zip" and FileAccess.file_exists(argument):
 			import_zip(argument)
 
 
-## Copies a picked ZIP into the library and opens it.
+## Opens a picked ZIP, asking first whether to add it to the library.
+func pick_zip(path: String) -> void:
+	if not _check(path):
+		return
+	if _in_library(path):
+		open_zip(path)
+		return
+	_pending_open = path
+	var message := "Added ZIPs are copied into the library, so they open again from here, even when %s is gone." % path.get_file()
+	var title := "Add %s to the library?" % path.get_file().get_basename()
+	var buttons := PackedStringArray(["Add to Library", "Open Only", "Cancel"])
+	if NativeDialogs.alerts():
+		DisplayServer.dialog_show(title, message, buttons, _on_add_answered, -1, 2)
+	else:
+		var ask: ConfirmationDialog = %ConfirmAdd
+		ask.title = title
+		ask.dialog_text = message
+		ask.popup_centered()
+
+
+func _on_add_answered(button: int) -> void:
+	match button:
+		0:
+			import_zip(_pending_open)
+		1:
+			open_zip(_pending_open)
+	_pending_open = ""
+
+
+func _on_add_custom(_action: StringName) -> void:
+	%ConfirmAdd.hide()
+	_on_add_answered(1)
+
+
+## Copies a ZIP into the library and opens it.
 func import_zip(path: String) -> void:
 	if not _check(path):
 		return
@@ -55,12 +93,14 @@ func import_zip(path: String) -> void:
 	open_zip(copy)
 
 
+## Opens the ZIP at [param path], from the library or from anywhere.
 func open_zip(path: String) -> void:
-	var opened := ConfigFile.new()
-	opened.load(OPENED_FILE)
-	opened.set_value("opened", path.get_file(), Time.get_unix_time_from_system())
-	opened.save(OPENED_FILE)
-	show_library()
+	if _in_library(path):
+		var opened := ConfigFile.new()
+		opened.load(OPENED_FILE)
+		opened.set_value("opened", path.get_file(), Time.get_unix_time_from_system())
+		opened.save(OPENED_FILE)
+		show_library()
 
 	var document := Document.instantiate()
 	add_child(document)
