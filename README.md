@@ -26,13 +26,35 @@ Pro or the visionOS Simulator (set your signing team in Xcode).
 The first window is the library. **Add ZIP** copies a ZIP into it and opens it;
 pick one to open it again, or delete it from the library (the original file
 stays). Each ZIP opens as its own volume, so several can be open at once. A ZIP
-with a `notes.txt` (Godot BBCode) shows its notes beside the volume. In the
-notes, `[url=frame:9]frame 9[/url]` is a link that pauses on frame 9.
+with a `notes.txt` (Godot BBCode) shows its notes beside the volume; see
+[Course ZIPs](#course-zips).
 
 Resize the volume from its bottom corners; marks there show where when it
 opens. The bar below it plays, pauses and scrubs the frames, and shows or hides
 the notes and the options (speed, loop, debug view). With a keyboard, Space
 plays or pauses and the arrow keys step a frame.
+
+## Course ZIPs
+
+A course ZIP is EnSight's export folder, zipped, with the notes beside it:
+
+```
+hall-sensor.zip
+├── notes.txt      the notes, in Godot BBCode (optional)
+├── images/        pictures and formulas the notes show (optional)
+└── …              EnSight's export as it comes: the .glb, field bricks and their metadata
+```
+
+In `notes.txt`, `[img]images/flow.png[/img]` shows an image from the ZIP, with
+any of Godot's `[img]` options, such as `[img width=320]…[/img]`. Paths are
+relative to `notes.txt`. PNG, JPEG, WebP and SVG work.
+
+Formulas are SVG images: write them in LaTeX and export SVG with any tool, such
+as an online LaTeX-to-SVG converter. SVGs stay sharp at any size, and their
+`currentColor`, which LaTeX converters use for the text, takes the notes' text
+color. Short formulas can also be plain text, such as `Re = ρUD/μ`.
+
+`[url=frame:9]frame 9[/url]` is a link that pauses on frame 9.
 
 ## Code
 

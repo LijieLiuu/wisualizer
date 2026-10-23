@@ -9,6 +9,7 @@ const PLAY_ICON := preload("res://app/icons/play.svg")
 const PAUSE_ICON := preload("res://app/icons/pause.svg")
 const SPEEDS := [0.5, 1.0, 2.0, 4.0]
 const NOTES_FILE := "notes.txt"
+const NotesImages := preload("res://app/notes_images.gd")
 ## Seconds a volume takes to open before the resize hint shows.
 const HINT_DELAY := 0.6
 
@@ -43,6 +44,8 @@ var frame := 0
 var playing := false
 var elapsed := 0.0
 var bounds := AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
+## The images the notes show, kept for as long as the document is open.
+var notes_images := NotesImages.new()
 
 
 func _ready() -> void:
@@ -75,6 +78,7 @@ func open(path: String) -> void:
 	zip.open(path)
 	var data := PackedByteArray()
 	var text := ""
+	var notes_path := ""
 	var metas := {}
 	var blobs := {}
 	for file in zip.get_files():
@@ -83,6 +87,10 @@ func open(path: String) -> void:
 			continue
 		if file.get_file() == NOTES_FILE:
 			text = zip.read_file(file).get_string_from_utf8()
+			notes_path = file
+			continue
+		# The notes read their own images below.
+		if NotesImages.is_image(file):
 			continue
 		var bytes := zip.read_file(file)
 		# Field metadata is a few lines of text; the bricks it describes are megabytes.
@@ -94,6 +102,9 @@ func open(path: String) -> void:
 				metas[meta["TIME"].to_float()] = meta
 		else:
 			blobs[file.get_file()] = bytes
+	if not text.is_empty():
+		var notes_text: RichTextLabel = %Text
+		text = notes_images.embed(text, zip, notes_path, str(get_instance_id()), notes_text.get_theme_color(&"default_color"), notes_text.get_theme_font_size(&"normal_font_size"))
 	zip.close()
 
 	var document := GLTFDocument.new()
