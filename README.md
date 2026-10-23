@@ -26,11 +26,13 @@ Pro or the visionOS Simulator (set your signing team in Xcode).
 The first window is the library. **Add ZIP** copies a ZIP into it and opens it;
 pick one to open it again, or delete it from the library (the original file
 stays). Each ZIP opens as its own volume, so several can be open at once. A ZIP
-with a `notes.txt` (Godot BBCode) shows its notes beside the volume.
+with a `notes.txt` (Godot BBCode) shows its notes beside the volume. In the
+notes, `[url=frame:9]frame 9[/url]` is a link that pauses on frame 9.
 
 Resize the volume from its bottom corners; marks there show where when it
 opens. The bar below it plays, pauses and scrubs the frames, and shows or hides
-the notes and the options (speed, debug view).
+the notes and the options (speed, loop, debug view). With a keyboard, Space
+plays or pauses and the arrow keys step a frame.
 
 ## Code
 

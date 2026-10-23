@@ -187,7 +187,7 @@ expand_icon = true
 
 [node name="Options" type="Window" parent="Model"]
 title = "Options"
-size = Vector2i(1200, 112)
+size = Vector2i(1480, 112)
 visible = false
 placement = 6
 ornament_anchor = Vector3(0.5, 0, 1)
@@ -241,6 +241,15 @@ toggle_mode = true
 button_group = SubResource("SpeedGroup")
 text = "4×"
 
+[node name="Loop" type="CheckButton" parent="Model/Options/Bar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Start over after the last frame, or stop there"
+button_pressed = true
+text = "Loop"
+
 [node name="Separator" type="VSeparator" parent="Model/Options/Bar"]
 layout_mode = 2
 
@@ -281,4 +290,5 @@ bbcode_enabled = true
 [connection signal="toggled" from="Model/Options/Bar/Debug" to="." method="update_field" unbinds=1]
 [connection signal="toggled" from="Model/Controls/Bar/NotesButton" to="." method="show_notes"]
 [connection signal="close_requested" from="Model/Notes" to="." method="close_notes"]
+[connection signal="meta_clicked" from="Model/Notes/Margin/Text" to="." method="open_link"]
 [connection signal="toggled" from="Model/Controls/Bar/OptionsButton" to="." method="show_options"]

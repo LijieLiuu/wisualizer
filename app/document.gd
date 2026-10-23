@@ -25,6 +25,7 @@ const HINT_DELAY := 0.6
 @onready var slider: HSlider = %Frame
 @onready var counter: Label = %Count
 @onready var debug_button: CheckButton = %Debug
+@onready var loop_button: CheckButton = %Loop
 @onready var probes: Node3D = %FieldProbes
 @onready var notes_button: Button = %NotesButton
 @onready var options_button: Button = %OptionsButton
@@ -42,6 +43,30 @@ var frame := 0
 var playing := false
 var elapsed := 0.0
 var bounds := AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
+
+
+func _ready() -> void:
+	for window: Window in [model, controls, options, notes]:
+		window.window_input.connect(_on_window_input)
+	# The bars are pointed at, not tabbed through, so the keyboard stays with
+	# the shortcuts: a focused button would also take Space.
+	for window: Window in [controls, options]:
+		for control in window.find_children("*", "Control", true, false):
+			if control is BaseButton or control is Range:
+				control.focus_mode = Control.FOCUS_NONE
+
+
+## Space plays or pauses, and the arrow keys step a frame, in any of this
+## document's windows.
+func _on_window_input(event: InputEvent) -> void:
+	if frames.is_empty():
+		return
+	if event.is_action_pressed(&"play_pause"):
+		toggle_play()
+	elif event.is_action_pressed(&"previous_frame", true):
+		step(-1)
+	elif event.is_action_pressed(&"next_frame", true):
+		step(1)
 
 
 func open(path: String) -> void:
@@ -169,7 +194,27 @@ func close() -> void:
 
 
 func toggle_play() -> void:
+	# Playing again after stopping at the end, without Loop, starts over.
+	if not playing and not loop_button.button_pressed and frame == frames.size() - 1:
+		seek(0)
 	set_playing(not playing)
+
+
+## Pauses and moves [param frames_by] frames, staying within the frames.
+func step(frames_by: int) -> void:
+	set_playing(false)
+	seek(clampi(frame + frames_by, 0, frames.size() - 1))
+
+
+## Follows a link in the notes. [code][url=frame:9]frame 9[/url][/code]
+## pauses on the ninth frame; other links open as usual.
+func open_link(meta: Variant) -> void:
+	var link := str(meta)
+	if link.begins_with("frame:"):
+		set_playing(false)
+		seek(clampi(link.trim_prefix("frame:").to_int() - 1, 0, frames.size() - 1))
+	else:
+		OS.shell_open(link)
 
 
 func set_playing(value: bool) -> void:
@@ -256,4 +301,10 @@ func _process(delta: float) -> void:
 	elapsed += delta * FPS * SPEEDS[speed_group.get_pressed_button().get_index()]
 	while elapsed >= 1.0:
 		elapsed -= 1.0
-		seek((frame + 1) % frames.size())
+		if frame + 1 < frames.size():
+			seek(frame + 1)
+		elif loop_button.button_pressed:
+			seek(0)
+		else:
+			set_playing(false)
+			return
