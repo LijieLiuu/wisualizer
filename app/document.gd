@@ -1,14 +1,15 @@
 extends Node
-## One opened ZIP, shown as a volume the person can place anywhere. Its
-## notes, if it has any, open in a window of their own beside the volume,
-## which the person can move and resize, and its controls sit along the
-## volume's bottom front edge.
+## One opened ZIP, shown as a volume the person can place anywhere; see
+## docs/zip-format.md. Its notes, if it has any, open in a window of their
+## own beside the volume, which the person can move and resize, and its
+## controls sit along the volume's bottom front edge.
 
 const FPS := 4.0
 const PLAY_ICON := preload("res://app/icons/play.svg")
 const PAUSE_ICON := preload("res://app/icons/pause.svg")
 const SPEEDS := [0.5, 1.0, 2.0, 4.0]
-const NOTES_FILE := "notes.txt"
+const Meta := preload("res://app/meta.gd")
+const ModelFrames := preload("res://app/model_frames.gd")
 const NotesImages := preload("res://app/notes_images.gd")
 ## Seconds a volume takes to open before the resize hint shows.
 const HINT_DELAY := 0.6
@@ -33,17 +34,15 @@ const HINT_DELAY := 0.6
 @onready var touch: Node = $FieldTouch
 @onready var speed_group: ButtonGroup = $Model/Options/Bar/Speeds/Speed0.button_group
 
-var frames: Array[Array] = []
-## The brick that maps a unit cube onto each frame's field.
-var boxes: Array = []
-## Each frame's brick values and cell counts, or null without a field.
-var bricks: Array = []
-## The largest value in any brick.
-var brick_peak := 0
+var meta := Meta.new()
+## One per model, showing it at the current frame.
+var models: Array[ModelFrames] = []
+## The field the debug view shows and controllers feel.
+var field_index := 0
+var frame_count := 0
 var frame := 0
 var playing := false
 var elapsed := 0.0
-var bounds := AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE)
 ## The images the notes show, kept for as long as the document is open.
 var notes_images := NotesImages.new()
 
@@ -62,7 +61,7 @@ func _ready() -> void:
 ## Space plays or pauses, and the arrow keys step a frame, in any of this
 ## document's windows.
 func _on_window_input(event: InputEvent) -> void:
-	if frames.is_empty():
+	if frame_count == 0:
 		return
 	if event.is_action_pressed(&"play_pause"):
 		toggle_play()
@@ -72,104 +71,35 @@ func _on_window_input(event: InputEvent) -> void:
 		step(1)
 
 
-func open(path: String) -> void:
-	var title := path.get_file().get_basename()
-	var zip := ZIPReader.new()
-	zip.open(path)
-	var data := PackedByteArray()
-	var text := ""
-	var notes_path := ""
-	var metas := {}
-	var blobs := {}
-	for file in zip.get_files():
-		if file.get_extension().to_lower() == "glb":
-			data = zip.read_file(file)
-			continue
-		if file.get_file() == NOTES_FILE:
-			text = zip.read_file(file).get_string_from_utf8()
-			notes_path = file
-			continue
-		# The notes read their own images below.
-		if NotesImages.is_image(file):
-			continue
-		var bytes := zip.read_file(file)
-		# Field metadata is a few lines of text; the bricks it describes are megabytes.
-		if bytes.size() < 4096:
-			var meta := read_meta(bytes)
-			if meta.has("TIME") and meta.has("BRICK ORIGIN"):
-				var axes := Basis(vector(meta["BRICK X_AXIS"]), vector(meta["BRICK Y_AXIS"]), vector(meta["BRICK Z_AXIS"]))
-				meta["box"] = Transform3D(axes * Basis.from_scale(vector(meta["BRICK SIZE"])), vector(meta["BRICK ORIGIN"]))
-				metas[meta["TIME"].to_float()] = meta
-		else:
-			blobs[file.get_file()] = bytes
-	if not text.is_empty():
-		var notes_text: RichTextLabel = %Text
-		text = notes_images.embed(text, zip, notes_path, str(get_instance_id()), notes_text.get_theme_color(&"default_color"), notes_text.get_theme_font_size(&"normal_font_size"))
-	zip.close()
-
-	var document := GLTFDocument.new()
-	var state := GLTFState.new()
-	document.append_from_buffer(data, "", state)
-	var roots := PackedInt32Array()
-	var counts: Array[int] = []
-	for scene in state.get_json()["scenes"]:
-		var nodes := PackedInt32Array(scene["nodes"])
-		roots.append_array(nodes)
-		counts.append(nodes.size())
-		var time: float = scene.get("extensions", {}).get("ANSYS_scene_timevalue", {}).get("timevalue", NAN)
-		# A field belongs to the scene with the same time.
-		var box = null
-		var brick = null
-		for brick_time in metas:
-			if is_equal_approx(brick_time, time):
-				var meta: Dictionary = metas[brick_time]
-				box = meta["box"]
-				# The data file is named by the exporting machine's path.
-				var blob: PackedByteArray = blobs.get(meta.get("DATA FILE", "").replace("\\", "/").get_file(), PackedByteArray())
-				var cells := Vector3i(vector(meta.get("DATA SIZE", "0 0 0")))
-				if meta.get("DATA FORMAT") == "BYTES" and blob.size() == cells.x * cells.y * cells.z:
-					brick = [blob, cells]
-					var sorted := blob.duplicate()
-					sorted.sort()
-					brick_peak = maxi(brick_peak, sorted[-1])
-		boxes.append(box)
-		bricks.append(brick)
-	state.root_nodes = roots
-	var scene_root := document.generate_scene(state)
-	var meshes := scene_root.find_children("*", "MeshInstance3D", true, false)
-	for mesh in meshes:
-		for surface in mesh.mesh.get_surface_count():
-			var material = mesh.get_active_material(surface)
-			# RealityKit needs ordinary blending for imported transparent materials.
-			if material is BaseMaterial3D and material.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS:
-				material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	content.add_child(scene_root)
-
-	# The generated children follow the combined scene-root order above.
-	var children := scene_root.get_children()
-	var offset := 0
-	for count in counts:
-		frames.append(children.slice(offset, offset + count))
-		offset += count
-
-	var first := meshes[0] as MeshInstance3D
-	bounds = first.global_transform * first.get_aabb()
-	for mesh in meshes:
-		bounds = bounds.merge(mesh.global_transform * mesh.get_aabb())
-	fit_boxes(bounds)
-	for box in boxes:
-		if box != null:
-			bounds = bounds.merge(box * AABB(Vector3.ZERO, Vector3.ONE))
-	debug_button.disabled = boxes.count(null) == boxes.size()
+## Opens the ZIP at [param path]. Returns an empty string, or what is
+## wrong with it.
+func open(path: String) -> String:
+	var error := meta.open(path)
+	if not error.is_empty():
+		return error
+	frame_count = meta.times.size()
+	field_index = meta.first_field
+	for entry in meta.models:
+		var frames := ModelFrames.new()
+		frames.setup(path, entry)
+		content.add_child(frames)
+		models.append(frames)
+	_add_model_switches()
+	_add_field_picker()
+	debug_button.disabled = meta.fields.is_empty()
 	touch.volume = volume
 	touch.field = field
 	probes.touch = touch
 	probes.volume = volume
 	probes.field = field
-	slider.max_value = frames.size() - 1
+	slider.max_value = frame_count - 1
 	seek(0)
 
-	model.title = title
+	var text := ""
+	if not meta.notes.is_empty():
+		var notes_text: RichTextLabel = %Text
+		text = notes_images.embed(meta.read(meta.notes).get_string_from_utf8(), meta.read, meta.notes, str(get_instance_id()), notes_text.get_theme_color(&"default_color"), notes_text.get_theme_font_size(&"normal_font_size"))
+	model.title = meta.title
 	%Text.text = text
 	notes_button.visible = not text.is_empty()
 	fit()
@@ -180,6 +110,45 @@ func open(path: String) -> void:
 	# Show that the volume can be resized, once it has finished opening.
 	create_tween().tween_callback(show_resize_hint).set_delay(HINT_DELAY)
 	set_playing(true)
+	return ""
+
+
+## A switch for each model, in the options, when there's more than one.
+func _add_model_switches() -> void:
+	if models.size() < 2:
+		return
+	var bar: HBoxContainer = %Separator.get_parent()
+	for frames in models:
+		var switch := CheckButton.new()
+		switch.text = frames.name
+		switch.button_pressed = true
+		switch.focus_mode = Control.FOCUS_NONE
+		switch.custom_minimum_size.y = 44
+		switch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		switch.toggled.connect(func(shown: bool) -> void: frames.visible = shown)
+		bar.add_child(switch)
+		bar.move_child(switch, %Separator.get_index())
+
+
+## A button for each field, in the options, when there's more than one.
+func _add_field_picker() -> void:
+	if meta.fields.size() < 2:
+		return
+	var bar: HBoxContainer = %Separator.get_parent()
+	var group := ButtonGroup.new()
+	for index in meta.fields.size():
+		var button := Button.new()
+		button.text = meta.fields[index].name
+		button.toggle_mode = true
+		button.button_group = group
+		button.button_pressed = index == field_index
+		button.focus_mode = Control.FOCUS_NONE
+		button.custom_minimum_size = Vector2(64, 44)
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		button.pressed.connect(func() -> void:
+			field_index = index
+			update_field())
+		bar.add_child(button)
 
 
 func show_notes(shown: bool) -> void:
@@ -201,12 +170,13 @@ func show_resize_hint() -> void:
 
 
 func close() -> void:
+	meta.close()
 	queue_free()
 
 
 func toggle_play() -> void:
 	# Playing again after stopping at the end, without Loop, starts over.
-	if not playing and not loop_button.button_pressed and frame == frames.size() - 1:
+	if not playing and not loop_button.button_pressed and frame == frame_count - 1:
 		seek(0)
 	set_playing(not playing)
 
@@ -214,16 +184,16 @@ func toggle_play() -> void:
 ## Pauses and moves [param frames_by] frames, staying within the frames.
 func step(frames_by: int) -> void:
 	set_playing(false)
-	seek(clampi(frame + frames_by, 0, frames.size() - 1))
+	seek(clampi(frame + frames_by, 0, frame_count - 1))
 
 
 ## Follows a link in the notes. [code][url=frame:9]frame 9[/url][/code]
 ## pauses on the ninth frame; other links open as usual.
-func open_link(meta: Variant) -> void:
-	var link := str(meta)
+func open_link(target: Variant) -> void:
+	var link := str(target)
 	if link.begins_with("frame:"):
 		set_playing(false)
-		seek(clampi(link.trim_prefix("frame:").to_int() - 1, 0, frames.size() - 1))
+		seek(clampi(link.trim_prefix("frame:").to_int() - 1, 0, frame_count - 1))
 	else:
 		OS.shell_open(link)
 
@@ -236,83 +206,58 @@ func set_playing(value: bool) -> void:
 
 func seek(value: float) -> void:
 	frame = int(value)
-	for index in frames.size():
-		for node in frames[index]:
-			node.visible = index == frame
+	for frames in models:
+		frames.show_frame(frame)
 	slider.set_value_no_signal(frame)
-	counter.text = "%d / %d" % [frame + 1, frames.size()]
+	counter.text = "%d / %d" % [frame + 1, frame_count]
 	update_field()
 
 
-## Shows the current frame's field box, and the field around each
-## controller, if the debug switch is on. The field can be felt with a
-## controller either way.
+## Shows the field box, and the field around each controller, if the debug
+## switch is on. The field can be felt with a controller either way.
 func update_field() -> void:
-	var box = boxes[frame]
-	field.visible = debug_button.button_pressed and box != null
+	if meta.fields.is_empty():
+		field.visible = false
+		probes.visible = false
+		return
+	var current: Meta.Field = meta.fields[field_index]
+	field.visible = debug_button.button_pressed
 	probes.visible = field.visible
-	if box != null:
-		field.transform = box
-	if box != null and bricks[frame] != null:
-		touch.set_brick(bricks[frame][0], bricks[frame][1], brick_peak)
-	else:
-		touch.set_brick(PackedByteArray(), Vector3i.ZERO, brick_peak)
+	probes.shown_field = current
+	field.transform = current.box
+	touch.set_brick(meta.read(current.files[frame]), current.cells, 255)
 
 
+## Frames the volume on the models and the fields, as they are at the
+## current frame.
 func fit() -> void:
-	var center := bounds.get_center()
+	var bounds := AABB()
+	var first := true
+	for frames in models:
+		var box := frames.get_bounds()
+		if box.has_volume():
+			bounds = box if first else bounds.merge(box)
+			first = false
+	for entry: Meta.Field in meta.fields:
+		var box := entry.box * AABB(Vector3.ZERO, Vector3.ONE)
+		bounds = box if first else bounds.merge(box)
+		first = false
 	var volume_size := volume.get_measured_size()
 	# Before the native window reports its size, use the size it opens at.
 	if volume_size == Vector3.ZERO:
 		volume_size = volume.window_size
-	volume.position = center
+	volume.position = bounds.get_center()
 	var required := bounds.size / volume_size
 	volume.size = required[required.max_axis_index()] * volume_size[volume.keep_aspect] * 1.15
 
 
-## Scales each frame's field brick about its center until it spans
-## [param model] along the model's longest side. EnSight doesn't say what
-## scale it writes bricks at, and it isn't the geometry's: the Hall sensor's
-## brick says it is 40 across, around a model 80 across. So the scale comes
-## from the model itself rather than from a fixed factor.
-func fit_boxes(model: AABB) -> void:
-	var first := boxes.find_custom(func(box) -> bool: return box != null)
-	if first < 0:
-		return
-	var axis := model.size.max_axis_index()
-	var scale: float = model.size[axis] / (boxes[first] as Transform3D).basis.get_scale()[axis]
-	if is_equal_approx(scale, 1.0):
-		return
-	for index in boxes.size():
-		var box = boxes[index]
-		if box == null:
-			continue
-		var center: Vector3 = box * (Vector3.ONE * 0.5)
-		boxes[index] = Transform3D(Basis.from_scale(Vector3.ONE * scale), center - center * scale) * box
-
-
-## Reads "KEY: value" lines, such as "BRICK ORIGIN: -20 -20 -20".
-func read_meta(bytes: PackedByteArray) -> Dictionary:
-	var meta := {}
-	for line in bytes.get_string_from_utf8().split("\n"):
-		var parts := line.split(":", true, 1)
-		if parts.size() == 2:
-			meta[parts[0].strip_edges()] = parts[1].strip_edges()
-	return meta
-
-
-func vector(text: String) -> Vector3:
-	var numbers := text.split_floats(" ", false)
-	return Vector3(numbers[0], numbers[1], numbers[2])
-
-
 func _process(delta: float) -> void:
-	if not playing or frames.is_empty():
+	if not playing or frame_count == 0:
 		return
 	elapsed += delta * FPS * SPEEDS[speed_group.get_pressed_button().get_index()]
 	while elapsed >= 1.0:
 		elapsed -= 1.0
-		if frame + 1 < frames.size():
+		if frame + 1 < frame_count:
 			seek(frame + 1)
 		elif loop_button.button_pressed:
 			seek(0)

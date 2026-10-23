@@ -3,6 +3,7 @@ extends MarginContainer
 ## in its own document windows, so several can be open at once.
 
 const Document := preload("res://app/document.tscn")
+const Meta := preload("res://app/meta.gd")
 ## Added ZIPs are copied here, so they can be opened again after the app
 ## restarts without access to where they came from.
 const LIBRARY := "user://library"
@@ -30,6 +31,12 @@ func _ready() -> void:
 
 ## Copies a picked ZIP into the library and opens it.
 func import_zip(path: String) -> void:
+	if not _check(path):
+		return
+	# Writing a ZIP that is already in the library over itself would empty it.
+	if _in_library(path):
+		open_zip(path)
+		return
 	var copy := LIBRARY.path_join(path.get_file())
 	var source := FileAccess.open(path, FileAccess.READ)
 	var target := FileAccess.open(copy, FileAccess.WRITE)
@@ -51,7 +58,39 @@ func open_zip(path: String) -> void:
 
 	var document := Document.instantiate()
 	add_child(document)
-	document.open(path)
+	var error: String = document.open(path)
+	if not error.is_empty():
+		document.queue_free()
+		show_error("Can't open %s" % path.get_file().get_basename(), error)
+
+
+## Whether [param path] is a ZIP this app can open; tells the person if not.
+func _check(path: String) -> bool:
+	var check := Meta.new()
+	var error := check.open(path)
+	check.close()
+	if not error.is_empty():
+		show_error("Can't open %s" % path.get_file(), error)
+	return error.is_empty()
+
+
+func _in_library(path: String) -> bool:
+	return ProjectSettings.globalize_path(path).simplify_path().get_base_dir() == ProjectSettings.globalize_path(LIBRARY).simplify_path()
+
+
+## Tells the person what went wrong, with the system's alert where there is one.
+func show_error(title: String, message: String) -> void:
+	if DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG):
+		DisplayServer.dialog_show(title, message, PackedStringArray(["OK"]), func(_button: int) -> void: pass)
+	else:
+		var alert := AcceptDialog.new()
+		alert.title = title
+		alert.dialog_text = message
+		alert.dialog_autowrap = true
+		alert.size = Vector2i(880, 200)
+		add_child(alert)
+		alert.confirmed.connect(alert.queue_free)
+		alert.popup_centered()
 
 
 ## Asks before deleting a ZIP from the library; the file it came from stays.

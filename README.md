@@ -1,8 +1,9 @@
 # Wisualizer
 
-An Apple Vision Pro teaching app (GaTech VIP): open an Ansys ZIP and play the
-GLB's scenes as frames in a 3D volume. The same scenes run on desktop with an
-orbit camera, and are meant to run on Quest later.
+An Apple Vision Pro teaching app (GaTech VIP): open a ZIP of Ansys EnSight
+results and play its frames in a 3D volume, with notes beside it. The same
+scenes run on desktop with an orbit camera, where a workspace also makes the
+ZIPs, and are meant to run on Quest later.
 
 ## Run
 
@@ -23,27 +24,25 @@ Pro or the visionOS Simulator (set your signing team in Xcode).
 
 ## Use
 
-The first window is the library. **Add ZIP** copies a ZIP into it and opens it;
-pick one to open it again, or delete it from the library (the original file
-stays). Each ZIP opens as its own volume, so several can be open at once. A ZIP
-with a `notes.txt` (Godot BBCode) shows its notes beside the volume; see
-[Course ZIPs](#course-zips).
+The first window is the library. **Add ZIP** copies a ZIP into it and opens
+it; pick one to open it again, or delete it from the library (the original
+file stays). Each ZIP opens as its own volume, so several can be open at once. A
+ZIP with notes shows them beside the volume; see [ZIPs](#zips).
 
 Resize the volume from its bottom corners; marks there show where when it
 opens. The bar below it plays, pauses and scrubs the frames, and shows or hides
 the notes and the options (speed, loop, debug view). With a keyboard, Space
 plays or pauses and the arrow keys step a frame.
 
-## Course ZIPs
+## ZIPs
 
-A course ZIP is EnSight's export folder, zipped, with the notes beside it:
+A ZIP has a `meta.json` that says where its models, fields, notes and images
+are; [docs/zip-format.md](docs/zip-format.md) describes it. A model is one
+GLB, or a folder with a GLB per frame, which plays a few frames at a time
+without the whole ZIP in memory. A ZIP can have several models and several
+fields.
 
-```
-hall-sensor.zip
-├── notes.txt      the notes, in Godot BBCode (optional)
-├── images/        pictures and formulas the notes show (optional)
-└── …              EnSight's export as it comes: the .glb, field bricks and their metadata
-```
+### Notes
 
 In `notes.txt`, `[img]images/flow.png[/img]` shows an image from the ZIP, with
 any of Godot's `[img]` options, such as `[img width=320]…[/img]`. Paths are
@@ -61,7 +60,9 @@ color. Short formulas can also be plain text, such as `Re = ρUD/μ`.
 | Path | Purpose |
 | --- | --- |
 | `app/launcher.gd`, `app/launcher.tscn` | Library: add, open and delete ZIPs |
+| `app/meta.gd` | Reads a ZIP through its `meta.json` |
 | `app/document.gd`, `app/document.tscn` | One opened ZIP: volume, notes, controls and options ornaments |
+| `app/model_frames.gd` | One model, loaded a few frames at a time |
 | `app/resize_hint.gd` | Corner marks that show the volume can be resized |
 | `app/icons/` | Button icons ([IconPark](https://iconpark.oceanengine.com/)) |
 | `ui/` | The app's look: `theme.tres` (SwiftUI-style buttons, sliders and scroll bars) and custom controls such as `Scrubber` |

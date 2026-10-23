@@ -2,11 +2,12 @@ extends Node3D
 ## Shows where each controller feels the field, like a game engine's light
 ## probe debug view: the brick cell at the controller's tip as a translucent
 ## cube colored by its value, and a white label over it with the cell's
-## position and value. Only shows while visible.
+## position and value, in the field's unit. Only shows while visible.
 ##
 ## Lives beside the Window's content, with no transform of its own, so its
 ## local coordinates are the model's.
 
+const Meta := preload("res://app/meta.gd")
 const OPACITY := 0.55
 const FONT_SIZE := 48
 ## The label's height and its gap above the cube, in meters.
@@ -18,6 +19,8 @@ var touch: Node
 var volume: SpatialVolume3D
 ## Its global transform maps a unit cube onto the current brick.
 var field: Node3D
+## The field shown, for its values' units.
+var shown_field: Meta.Field
 
 var _colors := Gradient.new()
 ## Per controller: its cube, its label, and the cell and brick revision
@@ -87,4 +90,5 @@ func _show(probe: Dictionary, cell: Vector3i) -> void:
 	var label: Label3D = probe.label
 	label.pixel_size = LABEL_HEIGHT / meters_per_unit / FONT_SIZE
 	label.position = center + Vector3.UP * ((unit.basis.get_scale().y / cells.y) * 0.5 + LABEL_GAP / meters_per_unit)
-	label.text = "(%.1f, %.1f, %.1f)\nstrength %.2f" % [center.x, center.y, center.z, value]
+	var reading: String = shown_field.format(shown_field.value_of(touch.byte_of(cell))) if shown_field else "%.2f" % value
+	label.text = "(%.1f, %.1f, %.1f)\n%s" % [center.x, center.y, center.z, reading]

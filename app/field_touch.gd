@@ -25,7 +25,7 @@ var field: Node3D
 ## cell has no value.
 var bytes := PackedByteArray()
 var cells := Vector3i.ZERO
-## The largest byte in any of the document's bricks, so strength compares
+## The byte that stands for the field's largest value, so strength compares
 ## across frames.
 var peak := 1
 ## Changes each time the brick does.
@@ -93,9 +93,14 @@ func is_inside(cell: Vector3i) -> bool:
 	return cell.x >= 0 and cell.y >= 0 and cell.z >= 0 and cell.x < cells.x and cell.y < cells.y and cell.z < cells.z
 
 
-## The field's value in [param cell], from 0 to 1 of the document's largest,
-## or 0 outside the brick or where the cell has no value.
+## The field's value in [param cell], from 0 to 1 of the largest, or 0
+## outside the brick or where the cell has no value.
 func value_of(cell: Vector3i) -> float:
+	return minf(float(byte_of(cell)) / peak, 1.0)
+
+
+## The brick's byte for [param cell], or 0 outside it.
+func byte_of(cell: Vector3i) -> int:
 	if bytes.is_empty() or not is_inside(cell):
-		return 0.0
-	return minf(float(bytes[cell.x + cells.x * (cell.y + cells.y * cell.z)]) / peak, 1.0)
+		return 0
+	return bytes[cell.x + cells.x * (cell.y + cells.y * cell.z)]

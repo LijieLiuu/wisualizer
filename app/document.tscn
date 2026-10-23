@@ -251,6 +251,7 @@ button_pressed = true
 text = "Loop"
 
 [node name="Separator" type="VSeparator" parent="Model/Options/Bar"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="Debug" type="CheckButton" parent="Model/Options/Bar"]

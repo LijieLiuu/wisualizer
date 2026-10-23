@@ -27,9 +27,10 @@ static func is_image(file: String) -> bool:
 
 
 ## Returns [param text] with each [img] path from the ZIP replaced by the path
-## of a texture holding that image. [param notes_path] is where the notes are
-## in the ZIP; [param scope] keeps one document's paths apart from another's.
-func embed(text: String, zip: ZIPReader, notes_path: String, scope: String, text_color: Color, font_size: int) -> String:
+## of a texture holding that image. [param read] gives a file's bytes by its
+## path in the ZIP, or none; [param notes_path] is where the notes are in the
+## ZIP; [param scope] keeps one document's paths apart from another's.
+func embed(text: String, read: Callable, notes_path: String, scope: String, text_color: Color, font_size: int) -> String:
 	var tag := RegEx.create_from_string(IMAGE_TAG)
 	var paths := {}
 	var result := ""
@@ -37,20 +38,19 @@ func embed(text: String, zip: ZIPReader, notes_path: String, scope: String, text
 	for found in tag.search_all(text):
 		var source := notes_path.get_base_dir().path_join(found.get_string(2).strip_edges()).simplify_path()
 		if not paths.has(source):
-			paths[source] = _load(zip, source, scope, text_color, font_size)
+			paths[source] = _load(read.call(source), source, scope, text_color, font_size)
 		result += text.substr(last, found.get_start() - last)
 		result += "[img%s]%s[/img]" % [found.get_string(1), paths[source] if not paths[source].is_empty() else found.get_string(2)]
 		last = found.get_end()
 	return result + text.substr(last)
 
 
-## Loads [param source] from the ZIP into a texture with a path of its own,
-## and returns that path, or an empty string if it isn't an image there.
-func _load(zip: ZIPReader, source: String, scope: String, text_color: Color, font_size: int) -> String:
-	if not zip.file_exists(source) or not is_image(source):
+## Loads the image [param bytes] of [param source] into a texture with a path
+## of its own, and returns that path, or an empty string if it isn't an image.
+func _load(bytes: PackedByteArray, source: String, scope: String, text_color: Color, font_size: int) -> String:
+	if bytes.is_empty() or not is_image(source):
 		push_warning("The notes show %s, which isn't an image in the ZIP." % source)
 		return ""
-	var bytes := zip.read_file(source)
 	var texture: Texture2D
 	var extension := source.get_extension().to_lower()
 	if extension == "svg":
