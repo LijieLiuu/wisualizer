@@ -3,7 +3,9 @@ extends SceneTree
 ## - splash.png, the boot splash, with the main window's proportions at twice
 ##   its size;
 ## - icon_back.png and icon_front.png, the layers of the visionOS app icon;
-## - icon.png, both layers in one, for the other platforms.
+## - icon.png, both layers in one, for the other platforms;
+## - icon_macos.png, icon.png on the macOS icon grid: macOS shows an icon as
+##   it is, so the rounded square, its margin and its shadow are drawn in.
 ## Run it from the project folder:
 ##   godot --path . -s branding/generate.gd
 
@@ -14,6 +16,11 @@ const ICON_SIZE := 1024
 ## standard deviation.
 const BLUR_WIDTH := 240
 const BLUR_RADIUS := 7.0
+## Apple's macOS icon grid, for a 1024-pixel icon: an 824-pixel rounded
+## square with corners of this radius, centered, with a soft shadow below.
+const MACOS_BODY := 824
+const MACOS_RADIUS := 185.0
+const MACOS_SHADOW := Color(0, 0, 0, 0.3)
 
 var _frames := 0
 ## Viewports by the file each one is saved to.
@@ -49,10 +56,53 @@ func _process(_delta: float) -> bool:
 	if _frames < 10:
 		return false
 	for file in _outputs:
-		var path: String = OUTPUT + file
-		_outputs[file].get_texture().get_image().save_png(path)
-		print("Wrote ", ProjectSettings.globalize_path(path))
+		var image: Image = _outputs[file].get_texture().get_image()
+		_save(file, image)
+		if file == "icon.png":
+			_save("icon_macos.png", _macos_icon(image))
 	return true
+
+
+func _save(file: String, image: Image) -> void:
+	var path: String = OUTPUT + file
+	image.save_png(path)
+	print("Wrote ", ProjectSettings.globalize_path(path))
+
+
+## [param icon] shrunk onto the macOS grid: rounded, with a margin, and a
+## shadow that falls a little below it.
+static func _macos_icon(icon: Image) -> Image:
+	var body := icon.duplicate() as Image
+	body.convert(Image.FORMAT_RGBA8)
+	body.resize(MACOS_BODY, MACOS_BODY, Image.INTERPOLATE_LANCZOS)
+	var out := Image.create_empty(ICON_SIZE, ICON_SIZE, false, Image.FORMAT_RGBA8)
+	var corner := (ICON_SIZE - MACOS_BODY) / 2
+	var shadow_blur := 18.0
+	var shadow_drop := 10.0
+	for y in ICON_SIZE:
+		for x in ICON_SIZE:
+			var point := Vector2(x + 0.5, y + 0.5) - Vector2(corner, corner)
+			var inside := _rounded_coverage(point, MACOS_BODY, MACOS_RADIUS)
+			var shadow := clampf(0.5 - _rounded_distance(point - Vector2(0, shadow_drop), MACOS_BODY, MACOS_RADIUS) / (shadow_blur * 2.0), 0.0, 1.0)
+			var color := Color(MACOS_SHADOW, MACOS_SHADOW.a * shadow * shadow)
+			if inside > 0.0:
+				var pixel := body.get_pixel(clampi(int(point.x), 0, MACOS_BODY - 1), clampi(int(point.y), 0, MACOS_BODY - 1))
+				color = color.blend(Color(pixel, inside))
+			out.set_pixel(x, y, color)
+	return out
+
+
+## How far [param point] is outside a rounded square of side [param side]
+## and corner [param radius] at the origin; negative inside.
+static func _rounded_distance(point: Vector2, side: float, radius: float) -> float:
+	var half := Vector2(side, side) * 0.5
+	var q := (point - half).abs() - half + Vector2(radius, radius)
+	return Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length() + minf(maxf(q.x, q.y), 0.0) - radius
+
+
+## How much of the pixel at [param point] the rounded square covers.
+static func _rounded_coverage(point: Vector2, side: float, radius: float) -> float:
+	return clampf(0.5 - _rounded_distance(point, side, radius), 0.0, 1.0)
 
 
 class Art:
