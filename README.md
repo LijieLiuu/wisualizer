@@ -69,5 +69,6 @@ color. Short formulas can also be plain text, such as `Re = ρUD/μ`.
 | `addons/spatial/` | `SpatialVolume3D`: a RealityKit volume on visionOS, an orbit camera elsewhere |
 
 Shared scenes use `Window` and `SpatialVolume3D` only; platform differences stay
-inside `addons/spatial/`. Deleting asks with the system alert where the platform
+inside `addons/spatial/`. On desktop, a window's ornaments are drawn inside it.
+Deleting asks with the system alert where the platform
 has one (`DisplayServer.dialog_show`).

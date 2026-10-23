@@ -1,11 +1,16 @@
 extends Node
-## Desktop layout: windows stay ordinary OS windows. A window placed beside
-## another opens next to it, and ornaments become borderless windows that
-## follow the window they belong to.
+## Desktop layout: windows stay ordinary OS windows, and a window placed
+## beside another opens next to it. Ornaments are drawn by Godot inside the
+## window they belong to, on a rounded backdrop, so they look and work the
+## same on every desktop: an OS window floating outside another can end up
+## off screen, and some systems, such as Wayland, don't let apps place them.
 
 const Placement := preload("../placement.gd")
 ## visionOS points per meter, as used for the gap between windows.
 const POINTS_PER_METER := 1360.0
+## How far ornaments sit inside their window's edge, in the window's units.
+const ORNAMENT_INSET := 12.0
+const ORNAMENT_BACKDROP := Color(0.11, 0.11, 0.12, 0.82)
 
 var _ornaments: Array[Window] = []
 ## Screen pixels per window pixel: windows are sized for the main window's
@@ -26,17 +31,46 @@ func add_window(window: Window) -> void:
 	# The OS places popups.
 	if window is Popup:
 		return
+	if window.placement == Window.PLACEMENT_ORNAMENT:
+		_add_ornament(window)
+		return
+	# Only ornaments go inside the window they belong to; a window that hosts
+	# them still opens the others as windows of their own.
+	window.force_native = true
 	if not is_equal_approx(_scale, 1.0):
 		window.size = Vector2i(Vector2(window.size) * _scale)
 		window.content_scale_factor *= _scale
-	if window.placement == Window.PLACEMENT_ORNAMENT:
-		window.transient = true
-		window.borderless = true
-		window.unresizable = true
-		_ornaments.append(window)
-		window.tree_exiting.connect(_ornaments.erase.bind(window))
-	elif Placement.side(window.placement) != Vector2.ZERO:
+	if Placement.side(window.placement) != Vector2.ZERO:
 		window.visibility_changed.connect(_place_beside.bind(window), CONNECT_ONE_SHOT)
+
+
+## Embeds [param ornament] in the window it belongs to. Its size, set in
+## window pixels at the main window's scale like any window's, becomes the
+## target's units, which already carry that scale.
+func _add_ornament(ornament: Window) -> void:
+	var target := Placement.target_of(ornament)
+	if target == null:
+		return
+	target.gui_embed_subwindows = true
+	ornament.borderless = true
+	ornament.unresizable = true
+	ornament.transparent = true
+	ornament.transparent_bg = true
+	ornament.size = Vector2i(Vector2(ornament.size) / ornament.content_scale_factor)
+	ornament.content_scale_factor = 1.0
+	var backdrop := Panel.new()
+	backdrop.name = "Backdrop"
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var style := StyleBoxFlat.new()
+	style.bg_color = ORNAMENT_BACKDROP
+	style.set_corner_radius_all(int(minf(ornament.size.x, ornament.size.y) * 0.5))
+	style.corner_detail = 16
+	style.anti_aliasing_size = 0.5
+	backdrop.add_theme_stylebox_override(&"panel", style)
+	ornament.add_child(backdrop, false, Node.INTERNAL_MODE_FRONT)
+	_ornaments.append(ornament)
+	ornament.tree_exiting.connect(_ornaments.erase.bind(ornament))
 
 
 func _process(_delta: float) -> void:
@@ -60,19 +94,19 @@ func _place_beside(window: Window) -> void:
 	window.position = Vector2i(rect.position)
 
 
+## Puts [param ornament] where its anchor says, inside its window: the
+## window's edge stands in for the space around it on visionOS.
 func _place_ornament(ornament: Window) -> void:
 	var target := Placement.target_of(ornament)
 	if target == null:
 		return
-	var target_size := Vector3(target.size.x, target.size.y, 0.0)
-	var own_size := Vector3(ornament.size.x, ornament.size.y, 0.0)
-	var center := Placement.ornament_center(ornament, target_size, own_size)
-	# Ornaments outside the window keep a gap from it, as on visionOS.
-	if ornament.ornament_alignment == Window.ORNAMENT_ALIGNMENT_AUTOMATIC:
-		var outward := Vector2(ornament.ornament_anchor.x, ornament.ornament_anchor.y) * 2.0 - Vector2.ONE
-		outward = outward.snapped(Vector2.ONE) * _gap(target)
-		center += Vector3(outward.x, outward.y, 0.0)
-	var position := Vector2i(Vector2(target.position) + Vector2(center.x, center.y) - Vector2(ornament.size) * 0.5)
+	var area := target.get_visible_rect().size
+	var own := Vector2(ornament.size)
+	var anchor := Vector2(ornament.ornament_anchor.x, ornament.ornament_anchor.y)
+	# The point of the ornament on its anchor: the edge it is anchored to.
+	var center := anchor * area - (anchor - Vector2(0.5, 0.5)) * own
+	center -= (anchor * 2.0 - Vector2.ONE).snapped(Vector2.ONE) * ORNAMENT_INSET
+	var position := Vector2i((center - own * 0.5).round())
 	if ornament.position != position:
 		ornament.position = position
 
