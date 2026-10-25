@@ -31,7 +31,10 @@ stays). Each ZIP opens as its own volume, so several can be open at once. A
 ZIP with notes shows them beside the volume; see [ZIPs](#zips).
 
 Resize the volume from its bottom corners; marks there show where when it
-opens. The bar below it plays, pauses and scrubs the frames, and shows or hides
+opens. On Apple Vision Pro, pinch and drag the model to turn it, like Apple's
+globe: sideways turns it about the vertical, up and down tilts it, and the
+tilt springs back when you let go. The volume makes room for it to turn any
+way, and **Reset** in the options turns it back. On desktop, drag to orbit the view. The bar below it plays, pauses and scrubs the frames, and shows or hides
 the notes and the options (speed, loop, debug view). With a keyboard, Space
 plays or pauses and the arrow keys step a frame.
 

@@ -17,6 +17,9 @@ var _tasks := {}
 ## Scenes the tasks have finished, by file, until the main thread adds them.
 var _finished := {}
 var _mutex := Mutex.new()
+## The first frame's geometry: its center and how far its farthest vertex is
+## from it, in its scene's coordinates. Measured once, as it takes a while.
+var _reach := []
 
 
 func setup(zip_path: String, model: Meta.Model) -> void:
@@ -39,7 +42,7 @@ func show_frame(frame: int) -> void:
 			WorkerThreadPool.wait_for_task_completion(_tasks[current])
 			_tasks.erase(current)
 		else:
-			_load_into(current)
+			_load_into(current, _reach.is_empty())
 		_collect()
 	for file in wanted:
 		if not _scenes.has(file) and not _tasks.has(file):
@@ -65,6 +68,13 @@ func get_bounds() -> AABB:
 			bounds = box if first else bounds.merge(box)
 			first = false
 	return bounds
+
+
+## How far the model reaches from [param pivot], in this node's
+## coordinates, going by its first frame: the radius of a sphere it can turn
+## in. Zero until that frame has loaded.
+func get_radius(pivot: Vector3) -> float:
+	return _reach[1] + (_reach[0] as Vector3).distance_to(pivot) if not _reach.is_empty() else 0.0
 
 
 func _process(_delta: float) -> void:
@@ -102,15 +112,17 @@ func _collect() -> void:
 		_scenes[file] = scene
 
 
-func _load_into(file: String) -> void:
-	var scene := _load(_zip_path, file)
+func _load_into(file: String, measure := false) -> void:
+	var scene := _load(_zip_path, file, measure)
+	if measure and scene:
+		_reach = scene.get_meta(&"reach")
 	_mutex.lock()
 	_finished[file] = scene
 	_mutex.unlock()
 
 
 ## Reads one GLB from the ZIP. Runs on any thread: it opens the ZIP itself.
-static func _load(zip_path: String, file: String) -> Node3D:
+static func _load(zip_path: String, file: String, measure := false) -> Node3D:
 	var zip := ZIPReader.new()
 	if zip.open(zip_path) != OK:
 		return null
@@ -121,6 +133,8 @@ static func _load(zip_path: String, file: String) -> Node3D:
 	if document.append_from_buffer(bytes, "", state) != OK:
 		return null
 	var scene := document.generate_scene(state) as Node3D
+	if measure:
+		scene.set_meta(&"reach", _measure_reach(state))
 	for mesh: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
 		for surface in mesh.mesh.get_surface_count():
 			var material = mesh.get_active_material(surface)
@@ -128,6 +142,44 @@ static func _load(zip_path: String, file: String) -> Node3D:
 			if material is BaseMaterial3D and material.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS:
 				material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	return scene
+
+
+## [center, radius] of the sphere around a glTF's vertices, read from the
+## imported data on this thread rather than from GPU buffers. Bounding boxes
+## would do, but a box's corners reach well past a disc or a ring of arrows.
+static func _measure_reach(state: GLTFState) -> Array:
+	var nodes := state.get_nodes()
+	var meshes := state.get_meshes()
+	var transforms: Array[Transform3D] = []
+	transforms.resize(nodes.size())
+	var resolved := PackedByteArray()
+	resolved.resize(nodes.size())
+	var points := PackedVector3Array()
+	var bounds := AABB()
+	for index in nodes.size():
+		var node: GLTFNode = nodes[index]
+		if node.mesh < 0:
+			continue
+		var transform := _node_transform(nodes, transforms, resolved, index)
+		var mesh: ImporterMesh = meshes[node.mesh].mesh
+		for surface in mesh.get_surface_count():
+			for vertex: Vector3 in mesh.get_surface_arrays(surface)[Mesh.ARRAY_VERTEX]:
+				var point := transform * vertex
+				bounds = AABB(point, Vector3.ZERO) if points.is_empty() else bounds.expand(point)
+				points.append(point)
+	var center := bounds.get_center()
+	var radius := 0.0
+	for point in points:
+		radius = maxf(radius, point.distance_squared_to(center))
+	return [center, sqrt(radius)]
+
+
+static func _node_transform(nodes: Array[GLTFNode], transforms: Array[Transform3D], resolved: PackedByteArray, index: int) -> Transform3D:
+	if resolved[index] == 0:
+		var node := nodes[index]
+		transforms[index] = (_node_transform(nodes, transforms, resolved, node.parent) if node.parent >= 0 else Transform3D()) * node.xform
+		resolved[index] = 1
+	return transforms[index]
 
 
 static func _local_transform(node: Node3D, root: Node3D) -> Transform3D:

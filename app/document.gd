@@ -13,11 +13,28 @@ const ModelFrames := preload("res://app/model_frames.gd")
 const NotesImages := preload("res://app/notes_images.gd")
 ## Seconds a volume takes to open before the resize hint shows.
 const HINT_DELAY := 0.6
+## Radians the model turns as the hand moves by its radius. More than one,
+## so a small movement of the hand turns it well round.
+const TURN_GAIN := 3.0
+## How far the model tilts toward or away from the person at most; it eases
+## toward this, and springs back upright when let go.
+const TILT_LIMIT := deg_to_rad(75.0)
+## How quickly the model follows the hand, and settles once let go: the
+## inverse of the time it takes to cover most of the way.
+const FOLLOW_RATE := 14.0
+const SETTLE_RATE := 6.0
+## Seconds of the hand's last speed that carry on turning the model after
+## it is let go, like a globe given a spin.
+const SPIN_TIME := 0.3
 
 @onready var model: Window = $Model
 ## The 3D nodes are found by unique name: platforms may move them within
 ## the Window.
 @onready var content: Node3D = %Content
+## Holds the model, the field box and the probes, and turns them together.
+@onready var turntable: Node3D = %Turntable
+## Where pinching and dragging the model turns it.
+@onready var grab: StaticBody3D = %Grab
 @onready var volume: SpatialVolume3D = %Volume
 @onready var field: Node3D = %Field
 @onready var controls: Window = $Model/Controls
@@ -45,6 +62,25 @@ var playing := false
 var elapsed := 0.0
 ## The images the notes show, kept for as long as the document is open.
 var notes_images := NotesImages.new()
+## How far the model is turned about the vertical, and tilted toward the
+## person about [member _tilt_axis], now and where it is heading.
+var yaw := 0.0
+var tilt := 0.0
+var _yaw_target := 0.0
+var _tilt_target := 0.0
+var _tilt_axis := Vector3.RIGHT
+## The drag turning the model: its touch index, or -1; where the hand was
+## when it began, the turn and the tilt then, and how fast the yaw was
+## changing. The tilt is kept before its easing toward the limit.
+var _drag := -1
+var _drag_start := Vector3.ZERO
+var _drag_yaw := 0.0
+var _drag_tilt := 0.0
+var _yaw_speed := 0.0
+## The model's center and the radius of a sphere around it, in its own
+## coordinates, from the last fit.
+var _center := Vector3.ZERO
+var _radius := 1.0
 
 
 func _ready() -> void:
@@ -149,6 +185,7 @@ func _add_field_picker() -> void:
 			field_index = index
 			update_field())
 		bar.add_child(button)
+		bar.move_child(button, %Reset.get_index())
 
 
 func show_notes(shown: bool) -> void:
@@ -228,30 +265,124 @@ func update_field() -> void:
 	touch.set_brick(meta.read(current.files[frame]), current.cells, 255)
 
 
-## Frames the volume on the models and the fields, as they are at the
-## current frame.
+## Turns the model as the person pinches and drags it, like Apple's globe:
+## moving the hand sideways turns it about the vertical without limit, and
+## moving it up or down tilts it toward or away from the person, up to
+## [constant TILT_LIMIT]. Both follow how far the hand has moved since the
+## pinch began, so small jitters don't add up, and the model eases after the
+## hand. On release the tilt springs back and the turn carries on a little.
+## Spatial events only come from visionOS; on desktop, the orbit camera
+## turns the view instead.
+func turn_by_drag(_camera: Node, event: InputEvent, _position: Vector3, _normal: Vector3, _shape: int) -> void:
+	if event.is_class("InputEventSpatialTouch"):
+		if event.get("pressed") and _drag < 0:
+			_begin_drag(event.get("index"), event.get("world_position"))
+		elif not event.get("pressed") and event.get("index") == _drag:
+			_drag = -1
+			_tilt_target = 0.0
+			_yaw_target += clampf(_yaw_speed * SPIN_TIME, -PI, PI)
+		return
+	if not event.is_class("InputEventSpatialDrag"):
+		return
+	var at: Vector3 = event.get("world_position")
+	if _drag < 0:
+		_begin_drag(event.get("index"), at - (event.get("world_relative") as Vector3))
+	if event.get("index") != _drag:
+		return
+	var moved := at - _drag_start
+	var turned := _yaw_target
+	_yaw_target = _drag_yaw + moved.dot(_tilt_axis) / _radius * TURN_GAIN
+	var delta := maxf(get_process_delta_time(), 0.001)
+	_yaw_speed = lerpf(_yaw_speed, (_yaw_target - turned) / delta, 0.5)
+	_tilt_target = _ease_tilt(_drag_tilt - moved.y / _radius * TURN_GAIN)
+	%Reset.visible = true
+
+
+## Starts a drag at [param at]: tilting turns about the horizontal axis
+## across the person's view, taken as facing the side of the model held.
+func _begin_drag(index: int, at: Vector3) -> void:
+	_drag = index
+	_drag_start = at
+	_drag_yaw = _yaw_target
+	_yaw_speed = 0.0
+	# A drag soon after another picks up the tilt where it is, as it springs
+	# back, about the same axis.
+	_drag_tilt = _unease_tilt(tilt)
+	var facing := Vector3(_center.x - at.x, 0.0, _center.z - at.z)
+	if absf(tilt) < deg_to_rad(1.0) and not facing.is_zero_approx():
+		_tilt_axis = facing.normalized().cross(Vector3.UP)
+
+
+## Eases [param raw] toward [constant TILT_LIMIT] rather than stopping at it:
+## one for one near upright, slower and slower toward the limit.
+static func _ease_tilt(raw: float) -> float:
+	return TILT_LIMIT * atan(raw / TILT_LIMIT * PI / 2.0) * 2.0 / PI
+
+
+static func _unease_tilt(eased: float) -> float:
+	return TILT_LIMIT * tan(clampf(eased / TILT_LIMIT, -0.99, 0.99) * PI / 2.0) * 2.0 / PI
+
+
+func reset_turn() -> void:
+	_yaw_target = 0.0
+	_tilt_target = 0.0
+	%Reset.visible = false
+
+
+## Eases the turn toward where it is heading.
+func _ease_turn(delta: float) -> void:
+	var rate := FOLLOW_RATE if _drag >= 0 else SETTLE_RATE
+	var weight := 1.0 - exp(-rate * delta)
+	yaw = lerpf(yaw, _yaw_target, weight)
+	tilt = lerpf(tilt, _tilt_target, weight)
+	_place_turntable()
+
+
+## Turns the turntable by [member yaw] and [member tilt] about the model's
+## center.
+func _place_turntable() -> void:
+	var turn := Basis(_tilt_axis, tilt) * Basis(Vector3.UP, yaw)
+	turntable.transform = Transform3D(turn, _center - turn * _center)
+
+
+## Frames the volume on the model so it can turn any way without leaving
+## the volume or changing size: on a sphere about its center that reaches
+## its farthest vertex. The field box, shown only while debugging, may reach
+## past it.
 func fit() -> void:
 	var bounds := AABB()
-	var first := true
 	for frames in models:
 		var box := frames.get_bounds()
 		if box.has_volume():
-			bounds = box if first else bounds.merge(box)
-			first = false
+			bounds = box if bounds.size == Vector3.ZERO else bounds.merge(box)
+	var boxes: Array[AABB] = []
 	for entry: Meta.Field in meta.fields:
-		var box := entry.box * AABB(Vector3.ZERO, Vector3.ONE)
-		bounds = box if first else bounds.merge(box)
-		first = false
+		boxes.append(entry.box * AABB(Vector3.ZERO, Vector3.ONE))
+	if bounds.size == Vector3.ZERO:
+		for box in boxes:
+			bounds = box if bounds.size == Vector3.ZERO else bounds.merge(box)
+	_center = bounds.get_center()
+	_radius = 0.0
+	for frames in models:
+		_radius = maxf(_radius, frames.get_radius(_center))
+	if is_zero_approx(_radius):
+		_radius = maxf(bounds.size.length() * 0.5, 0.001)
+	# The model is grabbed by its bounds, which stay inside the volume and
+	# leave the space around the model for moving the window.
+	grab.position = _center
+	(grab.get_node("Shape").shape as BoxShape3D).size = bounds.size.max(Vector3.ONE * bounds.size[bounds.size.max_axis_index()] * 0.02)
+	_place_turntable()
 	var volume_size := volume.get_measured_size()
 	# Before the native window reports its size, use the size it opens at.
 	if volume_size == Vector3.ZERO:
 		volume_size = volume.window_size
-	volume.position = bounds.get_center()
-	var required := bounds.size / volume_size
-	volume.size = required[required.max_axis_index()] * volume_size[volume.keep_aspect] * 1.15
+	volume.position = _center
+	var smallest := volume_size[volume_size.min_axis_index()]
+	volume.size = _radius * 2.0 / smallest * volume_size[volume.keep_aspect] * 1.1
 
 
 func _process(delta: float) -> void:
+	_ease_turn(delta)
 	if not playing or frame_count == 0:
 		return
 	elapsed += delta * FPS * SPEEDS[speed_group.get_pressed_button().get_index()]

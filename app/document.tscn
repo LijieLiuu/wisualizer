@@ -27,6 +27,8 @@ size = Vector3(0.006, 1.006, 0.006)
 material = SubResource("Edge")
 size = Vector3(0.006, 0.006, 1.006)
 
+[sub_resource type="BoxShape3D" id="GrabShape"]
+
 [sub_resource type="ButtonGroup" id="SpeedGroup"]
 
 [node name="Document" type="Node"]
@@ -42,63 +44,72 @@ size = Vector2i(1200, 1200)
 visible = false
 placement = 2
 
-[node name="Content" type="Node3D" parent="Model"]
+[node name="Turntable" type="Node3D" parent="Model"]
 unique_name_in_owner = true
 
-[node name="FieldProbes" type="Node3D" parent="Model"]
+[node name="Content" type="Node3D" parent="Model/Turntable"]
+unique_name_in_owner = true
+
+[node name="Grab" type="StaticBody3D" parent="Model/Turntable"]
+unique_name_in_owner = true
+
+[node name="Shape" type="CollisionShape3D" parent="Model/Turntable/Grab"]
+shape = SubResource("GrabShape")
+
+[node name="FieldProbes" type="Node3D" parent="Model/Turntable"]
 unique_name_in_owner = true
 visible = false
 script = ExtResource("field_probes")
 
-[node name="Field" type="Node3D" parent="Model"]
+[node name="Field" type="Node3D" parent="Model/Turntable"]
 unique_name_in_owner = true
 visible = false
 
-[node name="X0" type="MeshInstance3D" parent="Model/Field"]
+[node name="X0" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 0)
 mesh = SubResource("EdgeX")
 
-[node name="X1" type="MeshInstance3D" parent="Model/Field"]
+[node name="X1" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, 0)
 mesh = SubResource("EdgeX")
 
-[node name="X2" type="MeshInstance3D" parent="Model/Field"]
+[node name="X2" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 1)
 mesh = SubResource("EdgeX")
 
-[node name="X3" type="MeshInstance3D" parent="Model/Field"]
+[node name="X3" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, 1)
 mesh = SubResource("EdgeX")
 
-[node name="Y0" type="MeshInstance3D" parent="Model/Field"]
+[node name="Y0" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 mesh = SubResource("EdgeY")
 
-[node name="Y1" type="MeshInstance3D" parent="Model/Field"]
+[node name="Y1" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 1)
 mesh = SubResource("EdgeY")
 
-[node name="Y2" type="MeshInstance3D" parent="Model/Field"]
+[node name="Y2" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.5, 0)
 mesh = SubResource("EdgeY")
 
-[node name="Y3" type="MeshInstance3D" parent="Model/Field"]
+[node name="Y3" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0.5, 1)
 mesh = SubResource("EdgeY")
 
-[node name="Z0" type="MeshInstance3D" parent="Model/Field"]
+[node name="Z0" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.5)
 mesh = SubResource("EdgeZ")
 
-[node name="Z1" type="MeshInstance3D" parent="Model/Field"]
+[node name="Z1" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0.5)
 mesh = SubResource("EdgeZ")
 
-[node name="Z2" type="MeshInstance3D" parent="Model/Field"]
+[node name="Z2" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0.5)
 mesh = SubResource("EdgeZ")
 
-[node name="Z3" type="MeshInstance3D" parent="Model/Field"]
+[node name="Z3" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0.5)
 mesh = SubResource("EdgeZ")
 
@@ -262,6 +273,15 @@ size_flags_vertical = 4
 tooltip_text = "Show the field box, and the field around each controller"
 text = "Debug"
 
+[node name="Reset" type="Button" parent="Model/Options/Bar"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Turn the model back the way it opened"
+text = "Reset"
+
 [node name="Notes" type="Window" parent="Model"]
 title = "Notes"
 size = Vector2i(1000, 1200)
@@ -285,6 +305,8 @@ layout_mode = 2
 bbcode_enabled = true
 
 [connection signal="close_requested" from="Model" to="." method="close"]
+[connection signal="input_event" from="Model/Turntable/Grab" to="." method="turn_by_drag"]
+[connection signal="pressed" from="Model/Options/Bar/Reset" to="." method="reset_turn"]
 [connection signal="resized" from="Model/Volume" to="." method="fit" unbinds=1]
 [connection signal="pressed" from="Model/Controls/Bar/Play" to="." method="toggle_play"]
 [connection signal="value_changed" from="Model/Controls/Bar/Frame" to="." method="seek"]
