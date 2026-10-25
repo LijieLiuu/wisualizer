@@ -70,14 +70,16 @@ func _embed_formulas(text: String, scope: String, text_color: Color, font_size: 
 
 
 ## Typesets [param tex] into a texture with a path of its own, and returns the
-## [img] tag showing it, centered on its own line if [param display].
+## [img] tag showing it, centered on its own line if [param display]. The path
+## is from the formula, so that editing it changes the notes' BBCode: a
+## [RichTextLabel] given the same text again shows nothing new.
 func _typeset(tex: String, display: bool, scope: String, text_color: Color, font_size: int) -> String:
 	var svg: String = MathJax.tex_to_svg(tex, display)
 	if svg.is_empty():
 		push_warning("The notes' formula %s didn't typeset: %s" % [tex, MathJax.get_error_message()])
 		return "[code]%s[/code] [i](%s)[/i]" % [tex.replace("[", "[lb]").replace("]", "[rb]"), MathJax.get_error_message()]
 	var texture := DPITexture.create_from_string(_prepare_svg(_center_baseline(svg), text_color, font_size))
-	var path := "math://%s/%d" % [scope, textures.size()]
+	var path := "math://%s/%s%s" % [scope, "display-" if display else "", tex.md5_text()]
 	texture.take_over_path(path)
 	textures.append(texture)
 	var image := "[img=center,baseline]%s[/img]" % path
