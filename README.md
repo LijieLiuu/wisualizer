@@ -62,10 +62,25 @@ empty one, and the pencil beside a ZIP opens it there.
   quantity, unit and range. EnSight doesn't say what scale its bricks are at,
   so the box is fitted to the models; it can also be typed in.
 - **Images**: what the notes show. **Insert into notes** adds an `[img]` tag.
-- **Notes**: BBCode on the left, as it will look on the right.
+- **Files**: **Import files…** includes vector data, CSV, TXT, or other supporting
+  files unchanged. Each file must be smaller than 2 GiB. Review their names and remove any you do not need. These
+  files travel with the ZIP; use **Models**, **Fields**, or **Images** for content
+  the viewer should display.
+- **Notes**: BBCode on the left, as it will look on the right. **Import TXT…**
+  reads a UTF-8 text file, with a choice to replace or append when notes already
+  exist. A UTF-8 byte-order mark is accepted; other encodings report an error.
 
 **Save** writes the ZIP into the library, **Save As…** somewhere else, and
-**Preview** saves and opens it.
+**Preview** saves and opens it. Importing a single static GLB also creates its
+first frame, so a model with notes and supporting files can be saved directly.
+A playable package needs at least one GLB and one frame. Files such as scientific
+vectors are preserved without converting or interpreting their values.
+
+Existing and newly added supporting files are retained after reopening and
+saving again, including files not listed by older package manifests. Duplicate
+names are rejected without overwriting files. Saving locks the editor until it
+finishes and replaces the destination only after writing a complete valid ZIP;
+a failed save keeps the previous package and the current edits.
 
 ### Notes
 
@@ -89,8 +104,8 @@ their `currentColor` takes the notes' text color.
 | Path | Purpose |
 | --- | --- |
 | `app/launcher.gd`, `app/launcher.tscn` | Library: add, make, edit, open and delete ZIPs |
-| `app/meta.gd` | Reads a ZIP through its `meta.json` |
-| `app/workspace.gd`, `app/workspace.tscn` | Desktop editor for a ZIP: frames, models, fields, images and notes |
+| `app/meta.gd`, `app/zip_files.gd` | Read ZIP metadata and validate its file inventory |
+| `app/workspace.gd`, `app/workspace.tscn` | Desktop editor for a ZIP: frames, models, fields, images, files and notes |
 | `app/draft.gd` | What the workspace edits, and saves as a ZIP |
 | `app/glb_info.gd`, `app/bov.gd` | Read what the workspace needs from a GLB's JSON and an EnSight brick header |
 | `app/native_dialogs.gd` | Whether alerts and file pickers are the system's or Godot's |
@@ -106,3 +121,20 @@ Shared scenes use `Window` and `SpatialVolume3D` only; platform differences stay
 inside `addons/spatial/`. On desktop, a window's ornaments are drawn inside it.
 Alerts and file pickers are the system's where the platform has them; run with
 `-- --godot-dialogs` to try Godot's own, which other platforms get.
+
+## Packaging checks
+
+Use the matching custom Godot editor from the Run section. After importing
+project resources in that editor, run the isolated fixture tests (they do not
+write to the app's library):
+
+```sh
+"$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_files_test.gd
+"$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_packaging_test.gd
+"$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_workspace_test.gd -- --godot-dialogs
+```
+
+The backend checks cover file bytes through save, reopen and Save As, TXT
+encodings, existing ZIP attachments, missing files, name collisions, and failed
+writes/replacements. Workspace checks cover TXT choices, file-list changes,
+editing during save, and failed Save As behavior.

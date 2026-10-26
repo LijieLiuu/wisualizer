@@ -3,6 +3,7 @@ extends RefCounted
 ## Keeps the ZIP open, so frames can be read as they are needed.
 
 const MANIFEST := "meta.json"
+const ZipFiles := preload("res://app/zip_files.gd")
 
 
 ## One model in the ZIP.
@@ -44,18 +45,50 @@ var fields: Array[Field] = []
 var first_field := 0
 ## Where the notes are in the ZIP, or "" without notes.
 var notes := ""
+## Supporting source files, preserved without interpreting their contents.
+var attachments := PackedStringArray()
 
 var _zip := ZIPReader.new()
+var _is_open := false
+## ZIP central-directory metadata distinguishes empty files from read failures.
+var entries := {}
+var file_names := PackedStringArray()
 
 
 ## Opens the ZIP at [param path]. Returns an empty string, or what is
 ## wrong with it.
 func open(path: String) -> String:
+	close()
+	times = PackedFloat64Array()
+	models.clear()
+	fields.clear()
+	attachments = PackedStringArray()
+	first_field = 0
+	notes = ""
 	if _zip.open(path) != OK:
 		return "This file isn't a ZIP."
-	if not _zip.file_exists(MANIFEST):
+	_is_open = true
+	var inventory := ZipFiles.inspect(path, _zip.get_files())
+	if not inventory.error.is_empty():
+		return inventory.error
+	entries = inventory.entries
+	file_names = PackedStringArray()
+	var seen := {}
+	for file: String in entries:
+		if entries[file].directory:
+			continue
+		file_names.append(file)
+		if not is_file_path(file):
+			return "The ZIP contains an invalid file path: %s." % file
+		if seen.has(file.to_lower()):
+			return "The ZIP contains duplicate file names: %s." % file
+		seen[file.to_lower()] = true
+	if not _file_exists(MANIFEST):
 		return "This ZIP has no %s." % MANIFEST
-	var manifest = JSON.parse_string(_zip.read_file(MANIFEST).get_string_from_utf8())
+	var manifest_read := read_checked(MANIFEST)
+	if not manifest_read.error.is_empty():
+		return manifest_read.error
+	var manifest = JSON.parse_string(manifest_read.bytes.get_string_from_utf8())
 	if not manifest is Dictionary:
 		return "%s isn't valid JSON." % MANIFEST
 	title = str(manifest.get("title", path.get_file().get_basename()))
@@ -90,16 +123,56 @@ func open(path: String) -> String:
 	if models.is_empty():
 		return "The ZIP has no models."
 	notes = str(manifest.get("notes", ""))
+	if not notes.is_empty() and (not is_file_path(notes) or not _file_exists(notes)):
+		return "The notes file is missing or has an invalid path."
+	var extra = manifest.get("attachments", [])
+	if not extra is Array:
+		return "The attachments must be a list of file paths."
+	var listed := {}
+	for file in extra:
+		if not file is String or not is_file_path(file) or not _file_exists(file):
+			return "An attachment is missing or has an invalid path."
+		if listed.has(file.to_lower()):
+			return "The attachment %s is listed more than once." % file
+		listed[file.to_lower()] = true
+		attachments.append(file)
+	for index in fields.size():
+		if fields[index].name == str(manifest.get("field", "")):
+			first_field = index
+			break
 	return ""
 
 
+func _file_exists(path: String) -> bool:
+	return entries.has(path) and not entries[path].directory
+
+
 func close() -> void:
-	_zip.close()
+	if _is_open:
+		_zip.close()
+		_is_open = false
 
 
 ## The bytes of [param file] in the ZIP, or none if it isn't there.
 func read(file: String) -> PackedByteArray:
-	return _zip.read_file(file) if not file.is_empty() and _zip.file_exists(file) else PackedByteArray()
+	var result := read_checked(file)
+	if not result.error.is_empty():
+		push_error(result.error)
+	return result.bytes
+
+
+func read_checked(file: String) -> Dictionary:
+	if file.is_empty():
+		return {bytes = PackedByteArray(), error = ""}
+	if not _is_open or not entries.has(file) or entries[file].directory:
+		return {bytes = PackedByteArray(), error = "The ZIP file %s is missing." % file}
+	var size: int = entries[file].size
+	if size > 0x7fffffff:
+		return {bytes = PackedByteArray(), error = "The ZIP file %s exceeds the reader's limit of less than 2 GiB." % file}
+	var bytes := _zip.read_file(file)
+	if bytes.size() != size:
+		return {bytes = PackedByteArray(), error = "Couldn't read all of %s. The ZIP may be damaged." % file}
+	return {bytes = bytes, error = ""}
 
 
 ## The file at each frame for [param path]: a file, the same at every
@@ -107,12 +180,12 @@ func read(file: String) -> PackedByteArray:
 ## Empty if it's neither.
 func _per_frame(path: String, extension: String) -> PackedStringArray:
 	var files := PackedStringArray()
-	if path.get_extension().to_lower() == extension and _zip.file_exists(path):
+	if path.get_extension().to_lower() == extension and _file_exists(path):
 		for index in times.size():
 			files.append(path)
 		return files
 	var folder := path.trim_suffix("/") + "/"
-	for file in _zip.get_files():
+	for file in file_names:
 		if file.begins_with(folder) and file.get_base_dir() + "/" == folder and file.get_extension().to_lower() == extension:
 			files.append(file)
 	files.sort()
@@ -121,3 +194,16 @@ func _per_frame(path: String, extension: String) -> PackedStringArray:
 
 static func _vector(values: Array) -> Vector3:
 	return Vector3(values[0], values[1], values[2])
+
+
+## File paths stay relative to the archive, and portable between computers.
+static func is_file_path(path: String) -> bool:
+	if path.is_empty() or path.begins_with("/") or "\\" in path or ":" in path:
+		return false
+	for part in path.split("/", true):
+		if part.is_empty() or part in [".", ".."] or part != part.validate_filename():
+			return false
+		for index in part.length():
+			if part.unicode_at(index) < 32:
+				return false
+	return true

@@ -1,5 +1,5 @@
 extends Window
-## The desktop's editor for a ZIP: a window where GLBs, bricks and images
+## The desktop's editor for a ZIP: a window where GLBs, bricks, images and files
 ## are imported, frames, models and fields are set, and the notes are
 ## written with a live preview, then saved as a ZIP in the library. Edits
 ## a [Draft]; see docs/zip-format.md for what it saves.
@@ -17,12 +17,20 @@ var draft := Draft.new()
 ## Where the ZIP is saved.
 var target := ""
 var _save_thread: Thread
+var _busy := false
+## Keep the first read until the user chooses Replace, Append or Cancel.
+var _pending_notes := ""
+var _notes_import_pending := false
 ## The textures the notes preview and the image preview show.
 var _preview_images := NotesImages.new()
 var _image_preview := NotesImages.new()
 var _preview_timer: SceneTreeTimer
 ## Set while the forms show a draft, so their edits aren't taken as changes.
 var _filling := false
+
+
+func _ready() -> void:
+	%ImportNotesChoice.add_button("Append", false, "append")
 
 
 ## Starts on the ZIP at [param path], or empty for a new one saved there.
@@ -52,11 +60,14 @@ func _show_draft() -> void:
 	show_models()
 	show_fields()
 	show_images()
+	show_files()
 	refresh_preview()
 
 
 ## Shows the page called [param page_name], one of the sidebar's sections.
 func show_page(page_name: String) -> void:
+	if _busy:
+		return
 	for page in %Pages.get_children():
 		page.visible = page.name == page_name
 	# Through its group, so the other sections let go; only toggled fires.
@@ -64,19 +75,25 @@ func show_page(page_name: String) -> void:
 
 
 func close() -> void:
-	if _save_thread:
+	if _busy:
 		return
 	draft.close()
 	queue_free()
 
 
 func edit_title(text: String) -> void:
+	if _busy or _filling:
+		return
 	draft.title = text
 
 
 ## Writes the ZIP on a thread, so a big one doesn't freeze the window.
 func save(play := false) -> void:
-	if _save_thread:
+	_save_to(target, play)
+
+
+func _save_to(path: String, play: bool) -> void:
+	if _busy:
 		return
 	var problem := draft.problems()
 	if not problem.is_empty():
@@ -84,20 +101,27 @@ func save(play := false) -> void:
 		return
 	_set_busy(true, "Saving…")
 	_save_thread = Thread.new()
-	_save_thread.start(func() -> void:
-		var error := draft.save(ProjectSettings.globalize_path(target))
-		_finish_save.call_deferred(error, play))
+	var start_error := _save_thread.start(func() -> void:
+		var error := draft.save(ProjectSettings.globalize_path(path))
+		_finish_save.call_deferred(error, play, path))
+	if start_error != OK:
+		_save_thread = null
+		_set_busy(false, "Could not start saving: %s" % error_string(start_error))
 
 
-func _finish_save(error: String, play: bool) -> void:
+func _finish_save(error: String, play: bool, path: String) -> void:
 	_save_thread.wait_to_finish()
 	_save_thread = null
 	_set_busy(false, error if not error.is_empty() else "Saved")
 	if error.is_empty():
+		# Change the working target only after the new ZIP was written.
+		target = path
+		_show_target()
 		# Sources now point into the saved ZIP.
 		show_models()
 		show_fields()
 		show_images()
+		show_files()
 		refresh_preview()
 		saved.emit(target, play)
 
@@ -107,18 +131,26 @@ func preview() -> void:
 
 
 func ask_save_as() -> void:
+	if _busy:
+		return
 	var dialog: FileDialog = %SaveAsFile
 	dialog.current_file = target.get_file()
 	dialog.popup_centered()
 
 
-## Saves to [param path] instead, and keeps working on that ZIP.
+## Saves to [param path] instead, and keeps working on that ZIP on success.
 func save_as(path: String) -> void:
+	if _busy:
+		return
 	if path.get_extension().to_lower() != "zip":
 		path += ".zip"
-	target = path
-	_show_target()
-	save()
+	_save_to(path, false)
+
+
+func ask_import(dialog_name: String) -> void:
+	if _busy:
+		return
+	(get_node(dialog_name) as FileDialog).popup_centered()
 
 
 func _show_target() -> void:
@@ -127,6 +159,16 @@ func _show_target() -> void:
 
 
 func _set_busy(busy: bool, status: String) -> void:
+	_busy = busy
+	# Modulation alone leaves text editors and keyboard shortcuts active.
+	# This viewport gate blocks both mouse and keyboard GUI input.
+	gui_disable_input = busy
+	if busy:
+		gui_release_focus()
+		for dialog: FileDialog in find_children("*", "FileDialog", true, false):
+			dialog.hide()
+		%ImportNotesChoice.hide()
+		cancel_notes_import()
 	%Save.disabled = busy
 	%SaveAs.disabled = busy
 	%Preview.disabled = busy
@@ -141,6 +183,8 @@ func _show_status(message: String) -> void:
 # Frames
 
 func show_frames() -> void:
+	if _busy:
+		return
 	var tree: Tree = %FrameList
 	tree.clear()
 	tree.set_column_title(0, "Frame")
@@ -162,15 +206,21 @@ func show_frames() -> void:
 
 
 func add_frame() -> void:
+	if _busy:
+		return
+	draft.auto_frame = false
 	draft.times.append(draft.times[-1] + 1.0 if not draft.times.is_empty() else 0.0)
 	show_frames()
 
 
 func remove_frame() -> void:
+	if _busy:
+		return
 	var item: TreeItem = %FrameList.get_selected()
 	if item == null:
 		return
 	var index := item.get_index()
+	draft.auto_frame = false
 	draft.times.remove_at(index)
 	for model in draft.models:
 		if model.changes() and index < model.files.size():
@@ -189,11 +239,14 @@ func remove_frame() -> void:
 
 
 func edit_frame() -> void:
+	if _busy:
+		return
 	var item: TreeItem = %FrameList.get_edited()
 	if item == null:
 		return
 	var text := item.get_text(1)
 	if text.is_valid_float():
+		draft.auto_frame = false
 		draft.times[item.get_index()] = text.to_float()
 	else:
 		item.set_text(1, _number(draft.times[item.get_index()]))
@@ -202,6 +255,8 @@ func edit_frame() -> void:
 # Models
 
 func import_glbs(paths: PackedStringArray) -> void:
+	if _busy:
+		return
 	var error := draft.add_glbs(paths)
 	if not error.is_empty():
 		_show_status(error)
@@ -215,6 +270,8 @@ func import_glbs(paths: PackedStringArray) -> void:
 
 
 func show_models(selected := -1) -> void:
+	if _busy:
+		return
 	var list: ItemList = %ModelList
 	if selected < 0 and list.is_anything_selected():
 		selected = list.get_selected_items()[0]
@@ -228,6 +285,8 @@ func show_models(selected := -1) -> void:
 
 
 func show_model(index: int) -> void:
+	if _busy:
+		return
 	%ModelForm.get_parent().visible = index >= 0
 	if index < 0:
 		return
@@ -242,6 +301,8 @@ func show_model(index: int) -> void:
 
 
 func rename_model(text: String) -> void:
+	if _busy:
+		return
 	if _filling:
 		return
 	var index := _selected(%ModelList)
@@ -251,6 +312,8 @@ func rename_model(text: String) -> void:
 
 
 func remove_model() -> void:
+	if _busy:
+		return
 	var index := _selected(%ModelList)
 	if index >= 0:
 		draft.models.remove_at(index)
@@ -258,6 +321,8 @@ func remove_model() -> void:
 
 
 func move_model(by: int) -> void:
+	if _busy:
+		return
 	var index := _selected(%ModelList)
 	var to := index + by
 	if index < 0 or to < 0 or to >= draft.models.size():
@@ -271,6 +336,8 @@ func move_model(by: int) -> void:
 # Fields
 
 func import_bovs(paths: PackedStringArray) -> void:
+	if _busy:
+		return
 	var error := draft.add_bovs(paths)
 	if not error.is_empty():
 		_show_status(error)
@@ -280,6 +347,8 @@ func import_bovs(paths: PackedStringArray) -> void:
 
 
 func show_fields(selected := -1) -> void:
+	if _busy:
+		return
 	var list: ItemList = %FieldList
 	if selected < 0 and list.is_anything_selected():
 		selected = list.get_selected_items()[0]
@@ -293,6 +362,8 @@ func show_fields(selected := -1) -> void:
 
 
 func show_field(index: int) -> void:
+	if _busy:
+		return
 	%FieldForm.get_parent().visible = index >= 0
 	if index < 0:
 		return
@@ -311,6 +382,8 @@ func show_field(index: int) -> void:
 
 
 func edit_field() -> void:
+	if _busy:
+		return
 	if _filling:
 		return
 	var index := _selected(%FieldList)
@@ -333,6 +406,8 @@ func edit_field() -> void:
 
 
 func fit_field() -> void:
+	if _busy:
+		return
 	var index := _selected(%FieldList)
 	if index < 0:
 		return
@@ -344,6 +419,8 @@ func fit_field() -> void:
 
 
 func set_first_field(pressed: bool) -> void:
+	if _busy:
+		return
 	if _filling:
 		return
 	var index := _selected(%FieldList)
@@ -355,6 +432,8 @@ func set_first_field(pressed: bool) -> void:
 
 
 func remove_field() -> void:
+	if _busy:
+		return
 	var index := _selected(%FieldList)
 	if index >= 0:
 		draft.fields.remove_at(index)
@@ -366,12 +445,16 @@ func remove_field() -> void:
 # Images
 
 func import_images(paths: PackedStringArray) -> void:
+	if _busy:
+		return
 	draft.add_images(paths)
 	show_images(draft.images.size() - 1)
 	refresh_preview()
 
 
 func show_images(selected := -1) -> void:
+	if _busy:
+		return
 	var list: ItemList = %ImageList
 	if selected < 0 and list.is_anything_selected():
 		selected = list.get_selected_items()[0]
@@ -385,18 +468,22 @@ func show_images(selected := -1) -> void:
 
 
 func show_image(index: int) -> void:
+	if _busy:
+		return
 	var preview: TextureRect = %ImagePreview
 	if index < 0:
 		preview.texture = null
 		return
 	var name: String = draft.images.keys()[index]
 	var images := NotesImages.new()
-	images.embed("[img]%s[/img]" % Draft.IMAGES_FOLDER.path_join(name), draft.read_file, Draft.NOTES_FILE, "image", %NotesPreview.get_theme_color(&"default_color"), %NotesPreview.get_theme_font_size(&"normal_font_size"))
+	images.embed("[img]%s[/img]" % Draft.IMAGES_FOLDER.path_join(name), draft.read_file, draft.notes_path, "image", %NotesPreview.get_theme_color(&"default_color"), %NotesPreview.get_theme_font_size(&"normal_font_size"))
 	preview.texture = images.textures[0] if not images.textures.is_empty() else null
 	_image_preview = images
 
 
 func remove_image() -> void:
+	if _busy:
+		return
 	var index := _selected(%ImageList)
 	if index >= 0:
 		draft.images.erase(draft.images.keys()[index])
@@ -406,6 +493,8 @@ func remove_image() -> void:
 
 ## Puts an [img] tag for the picked image at the notes' cursor.
 func insert_image() -> void:
+	if _busy:
+		return
 	var index := _selected(%ImageList)
 	if index < 0:
 		return
@@ -415,9 +504,104 @@ func insert_image() -> void:
 	editor.grab_focus()
 
 
+# Files
+
+func import_files(paths: PackedStringArray) -> void:
+	if _busy:
+		return
+	var error := draft.add_attachments(paths)
+	if not error.is_empty():
+		_show_status(error)
+		return
+	show_files(draft.attachments.size() - 1)
+	_show_status("Added %d file%s" % [paths.size(), "" if paths.size() == 1 else "s"])
+
+
+func show_files(selected := -1) -> void:
+	if _busy:
+		return
+	var list: ItemList = %AttachmentList
+	if selected < 0 and list.is_anything_selected():
+		selected = list.get_selected_items()[0]
+	list.clear()
+	for path: String in draft.attachments:
+		list.add_item(path)
+	selected = clampi(selected, -1, draft.attachments.size() - 1)
+	if selected >= 0:
+		list.select(selected)
+	show_file(selected)
+
+
+func show_file(index: int) -> void:
+	if _busy:
+		return
+	%RemoveAttachment.disabled = index < 0
+	if index < 0:
+		%AttachmentInfo.text = "Select a file to see where it comes from."
+		return
+	var path: String = draft.attachments.keys()[index]
+	var source: String = draft.attachments[path]
+	%AttachmentInfo.text = "In this ZIP: %s\n\nSource: %s" % [path, "Saved ZIP" if source.begins_with(Draft.IN_ZIP) else source]
+
+
+func remove_file() -> void:
+	if _busy:
+		return
+	var index := _selected(%AttachmentList)
+	if index >= 0:
+		draft.attachments.erase(draft.attachments.keys()[index])
+		show_files(index - 1)
+
+
 # Notes
 
+func import_notes(path: String) -> void:
+	if _busy:
+		return
+	var result := Draft.read_notes_file(path)
+	var error: String = result.get("error", "")
+	if not error.is_empty():
+		_show_status(error)
+		return
+	_pending_notes = result["text"]
+	_notes_import_pending = true
+	if draft.notes.is_empty():
+		apply_notes_import(false)
+	else:
+		%ImportNotesChoice.dialog_text = "Import %s as BBCode notes? Replace the current notes, or append the imported text after them." % path.get_file()
+		%ImportNotesChoice.popup_centered()
+
+
+func notes_import_action(action: StringName) -> void:
+	if action == &"append":
+		apply_notes_import(true)
+
+
+func apply_notes_import(append: bool) -> void:
+	if _busy or not _notes_import_pending:
+		return
+	var text := _pending_notes
+	if append:
+		text = draft.notes + ("\n\n" if not draft.notes.is_empty() and not text.is_empty() else "") + text
+	draft.notes = text
+	_filling = true
+	%Editor.text = text
+	_filling = false
+	%ImportNotesChoice.hide()
+	cancel_notes_import()
+	show_page("Notes")
+	refresh_preview()
+	_show_status("TXT notes imported")
+
+
+func cancel_notes_import() -> void:
+	_pending_notes = ""
+	_notes_import_pending = false
+
+
 func edit_notes() -> void:
+	if _busy:
+		return
 	if _filling:
 		return
 	draft.notes = %Editor.text
@@ -433,7 +617,7 @@ func refresh_preview() -> void:
 		return
 	var preview: RichTextLabel = %NotesPreview
 	var images := NotesImages.new()
-	preview.text = images.embed(draft.notes, draft.read_file, Draft.NOTES_FILE, "workspace", preview.get_theme_color(&"default_color"), preview.get_theme_font_size(&"normal_font_size"))
+	preview.text = images.embed(draft.notes, draft.read_file, draft.notes_path, "workspace", preview.get_theme_color(&"default_color"), preview.get_theme_font_size(&"normal_font_size"))
 	_preview_images = images
 
 

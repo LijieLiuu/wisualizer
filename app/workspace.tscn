@@ -92,6 +92,16 @@ button_group = SubResource("Sections")
 text = "Images"
 alignment = 0
 
+[node name="FilesSection" type="Button" parent="Root/Sidebar/Column"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+tooltip_text = "Source files included with the ZIP"
+theme_type_variation = &"SidebarRow"
+toggle_mode = true
+button_group = SubResource("Sections")
+text = "Files"
+alignment = 0
+
 [node name="NotesSection" type="Button" parent="Root/Sidebar/Column"]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
@@ -561,6 +571,81 @@ layout_mode = 2
 expand_mode = 1
 stretch_mode = 5
 
+[node name="Files" type="VBoxContainer" parent="Root/Content/Pages"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="Label" parent="Root/Content/Pages/Files"]
+layout_mode = 2
+theme_type_variation = &"Header"
+text = "Files"
+
+[node name="Caption" type="Label" parent="Root/Content/Pages/Files"]
+layout_mode = 2
+theme_type_variation = &"Caption"
+text = "Include vector data, CSV, TXT, or other source files unchanged. These files travel with the ZIP."
+autowrap_mode = 3
+
+[node name="Gap" type="Control" parent="Root/Content/Pages/Files"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="Row" type="HBoxContainer" parent="Root/Content/Pages/Files"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="ListCard" type="PanelContainer" parent="Root/Content/Pages/Files/Row"]
+custom_minimum_size = Vector2(480, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"Card"
+
+[node name="Column" type="VBoxContainer" parent="Root/Content/Pages/Files/Row/ListCard"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Toolbar" type="HBoxContainer" parent="Root/Content/Pages/Files/Row/ListCard/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ImportAttachments" type="Button" parent="Root/Content/Pages/Files/Row/ListCard/Column/Toolbar"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+tooltip_text = "Choose one or more files to include unchanged"
+size_flags_horizontal = 3
+text = "Import files…"
+
+[node name="RemoveAttachment" type="Button" parent="Root/Content/Pages/Files/Row/ListCard/Column/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+tooltip_text = "Remove the selected file from this ZIP"
+theme_type_variation = &"IconButton"
+disabled = true
+icon = ExtResource("2")
+icon_alignment = 1
+expand_icon = true
+
+[node name="AttachmentList" type="ItemList" parent="Root/Content/Pages/Files/Row/ListCard/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="InfoCard" type="PanelContainer" parent="Root/Content/Pages/Files/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"Card"
+
+[node name="AttachmentInfo" type="Label" parent="Root/Content/Pages/Files/Row/InfoCard"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 0
+theme_type_variation = &"Caption"
+text = "Select a file to see where it comes from."
+autowrap_mode = 3
+
 [node name="Notes" type="VBoxContainer" parent="Root/Content/Pages"]
 visible = false
 layout_mode = 2
@@ -576,6 +661,13 @@ layout_mode = 2
 theme_type_variation = &"Caption"
 text = "Godot BBCode on the left, as it will look beside the volume on the right: [b]bold[/b], [img]images/flow.png[/img], and [url=frame:9]frame 9[/url], which pauses on frame 9."
 autowrap_mode = 3
+
+[node name="ImportNotes" type="Button" parent="Root/Content/Pages/Notes"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Import a UTF-8 TXT file as notes; BBCode formatting is interpreted in the preview"
+text = "Import TXT…"
 
 [node name="Gap" type="Control" parent="Root/Content/Pages/Notes"]
 custom_minimum_size = Vector2(0, 10)
@@ -628,6 +720,31 @@ access = 2
 filters = PackedStringArray("*.png, *.jpg, *.jpeg, *.webp, *.svg ; Images")
 use_native_dialog = true
 
+[node name="AttachmentFiles" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Include Source Files"
+file_mode = 1
+access = 2
+use_native_dialog = true
+
+[node name="NotesFile" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Import TXT Notes (BBCode)"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.txt ; UTF-8 text")
+use_native_dialog = true
+
+[node name="ImportNotesChoice" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "Import TXT Notes"
+size = Vector2i(780, 240)
+exclusive = true
+ok_button_text = "Replace"
+cancel_button_text = "Cancel"
+dialog_autowrap = true
+dialog_text = "Replace the current notes, or append the imported text?"
+
 [node name="SaveAsFile" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Save As"
@@ -642,6 +759,7 @@ use_native_dialog = true
 [connection signal="pressed" from="Root/Sidebar/Column/ModelsSection" to="." method="show_page" binds= ["Models"]]
 [connection signal="pressed" from="Root/Sidebar/Column/FieldsSection" to="." method="show_page" binds= ["Fields"]]
 [connection signal="pressed" from="Root/Sidebar/Column/ImagesSection" to="." method="show_page" binds= ["Images"]]
+[connection signal="pressed" from="Root/Sidebar/Column/FilesSection" to="." method="show_page" binds= ["Files"]]
 [connection signal="pressed" from="Root/Sidebar/Column/NotesSection" to="." method="show_page" binds= ["Notes"]]
 [connection signal="pressed" from="Root/Sidebar/Column/Save" to="." method="save"]
 [connection signal="pressed" from="Root/Sidebar/Column/SaveAs" to="." method="ask_save_as"]
@@ -649,13 +767,13 @@ use_native_dialog = true
 [connection signal="pressed" from="Root/Content/Pages/Frames/Card/Column/Toolbar/AddFrame" to="." method="add_frame"]
 [connection signal="pressed" from="Root/Content/Pages/Frames/Card/Column/Toolbar/RemoveFrame" to="." method="remove_frame"]
 [connection signal="item_edited" from="Root/Content/Pages/Frames/Card/Column/FrameList" to="." method="edit_frame"]
-[connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/ImportGLB" to="GLBFiles" method="popup_centered"]
+[connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/ImportGLB" to="." method="ask_import" binds= ["GLBFiles"]]
 [connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/ModelUp" to="." method="move_model" binds= [-1]]
 [connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/ModelDown" to="." method="move_model" binds= [1]]
 [connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/RemoveModel" to="." method="remove_model"]
 [connection signal="item_selected" from="Root/Content/Pages/Models/Row/ListCard/Column/ModelList" to="." method="show_model"]
 [connection signal="text_changed" from="Root/Content/Pages/Models/Row/FormCard/ModelForm/ModelName" to="." method="rename_model"]
-[connection signal="pressed" from="Root/Content/Pages/Fields/Row/ListCard/Column/Toolbar/ImportBOV" to="BOVFiles" method="popup_centered"]
+[connection signal="pressed" from="Root/Content/Pages/Fields/Row/ListCard/Column/Toolbar/ImportBOV" to="." method="ask_import" binds= ["BOVFiles"]]
 [connection signal="pressed" from="Root/Content/Pages/Fields/Row/ListCard/Column/Toolbar/RemoveField" to="." method="remove_field"]
 [connection signal="item_selected" from="Root/Content/Pages/Fields/Row/ListCard/Column/FieldList" to="." method="show_field"]
 [connection signal="text_changed" from="Root/Content/Pages/Fields/Row/FormCard/FieldForm/FieldName" to="." method="edit_field" unbinds=1]
@@ -666,7 +784,7 @@ use_native_dialog = true
 [connection signal="text_changed" from="Root/Content/Pages/Fields/Row/FormCard/FieldForm/Size" to="." method="edit_field" unbinds=1]
 [connection signal="pressed" from="Root/Content/Pages/Fields/Row/FormCard/FieldForm/Fit" to="." method="fit_field"]
 [connection signal="toggled" from="Root/Content/Pages/Fields/Row/FormCard/FieldForm/First" to="." method="set_first_field"]
-[connection signal="pressed" from="Root/Content/Pages/Images/Row/ListCard/Column/Toolbar/ImportImages" to="ImageFiles" method="popup_centered"]
+[connection signal="pressed" from="Root/Content/Pages/Images/Row/ListCard/Column/Toolbar/ImportImages" to="." method="ask_import" binds= ["ImageFiles"]]
 [connection signal="pressed" from="Root/Content/Pages/Images/Row/ListCard/Column/Toolbar/RemoveImage" to="." method="remove_image"]
 [connection signal="item_selected" from="Root/Content/Pages/Images/Row/ListCard/Column/ImageList" to="." method="show_image"]
 [connection signal="pressed" from="Root/Content/Pages/Images/Row/ListCard/Column/InsertImage" to="." method="insert_image"]
@@ -675,3 +793,12 @@ use_native_dialog = true
 [connection signal="files_selected" from="BOVFiles" to="." method="import_bovs"]
 [connection signal="files_selected" from="ImageFiles" to="." method="import_images"]
 [connection signal="file_selected" from="SaveAsFile" to="." method="save_as"]
+[connection signal="pressed" from="Root/Content/Pages/Files/Row/ListCard/Column/Toolbar/ImportAttachments" to="." method="ask_import" binds= ["AttachmentFiles"]]
+[connection signal="pressed" from="Root/Content/Pages/Files/Row/ListCard/Column/Toolbar/RemoveAttachment" to="." method="remove_file"]
+[connection signal="item_selected" from="Root/Content/Pages/Files/Row/ListCard/Column/AttachmentList" to="." method="show_file"]
+[connection signal="pressed" from="Root/Content/Pages/Notes/ImportNotes" to="." method="ask_import" binds= ["NotesFile"]]
+[connection signal="files_selected" from="AttachmentFiles" to="." method="import_files"]
+[connection signal="file_selected" from="NotesFile" to="." method="import_notes"]
+[connection signal="confirmed" from="ImportNotesChoice" to="." method="apply_notes_import" binds= [false]]
+[connection signal="custom_action" from="ImportNotesChoice" to="." method="notes_import_action"]
+[connection signal="canceled" from="ImportNotesChoice" to="." method="cancel_notes_import"]
