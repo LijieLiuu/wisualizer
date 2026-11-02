@@ -59,12 +59,13 @@ empty one, and the pencil beside a ZIP opens it there.
   doesn't. Rename and reorder them here.
 - **Fields**: **Import bricks…** takes the brick headers EnSight writes beside
   each brick (`*_meta0001` and so on), one field per variable. Set the name,
-  quantity, unit and range. EnSight doesn't say what scale its bricks are at,
-  so the box is fitted to the models; it can also be typed in.
+  quantity, unit and range. Imports preserve the header's spatial box.
+  **Fit to models** is an optional visual alignment heuristic; check the source
+  coordinate system before using it.
 - **Images**: what the notes show. **Insert into notes** adds an `[img]` tag.
 - **Files**: **Import files…** includes vector data, CSV, TXT, or other supporting
-  files unchanged. Each file must be smaller than 2 GiB. Review their names and remove any you do not need. These
-  files travel with the ZIP; use **Models**, **Fields**, or **Images** for content
+  files unchanged. Each file must be smaller than 2 GiB. Review their names
+  and remove any you do not need. These files travel with the ZIP; use **Models**, **Fields**, or **Images** for content
   the viewer should display.
 - **Notes**: BBCode on the left, as it will look on the right. **Import TXT…**
   reads a UTF-8 text file, with a choice to replace or append when notes already
@@ -99,42 +100,40 @@ their `currentColor` takes the notes' text color.
 
 `[url=frame:9]frame 9[/url]` is a link that pauses on frame 9.
 
-## Code
-
-| Path | Purpose |
-| --- | --- |
-| `app/launcher.gd`, `app/launcher.tscn` | Library: add, make, edit, open and delete ZIPs |
-| `app/meta.gd`, `app/zip_files.gd` | Read ZIP metadata and validate its file inventory |
-| `app/workspace.gd`, `app/workspace.tscn` | Desktop editor for a ZIP: frames, models, fields, images, files and notes |
-| `app/draft.gd` | What the workspace edits, and saves as a ZIP |
-| `app/glb_info.gd`, `app/bov.gd` | Read what the workspace needs from a GLB's JSON and an EnSight brick header |
-| `app/native_dialogs.gd` | Whether alerts and file pickers are the system's or Godot's |
-| `app/document.gd`, `app/document.tscn` | One opened ZIP: volume, notes, controls and options ornaments |
-| `app/model_frames.gd` | One model, loaded a few frames at a time |
-| `app/resize_hint.gd` | Corner marks that show the volume can be resized |
-| `app/icons/` | Button icons ([IconPark](https://iconpark.oceanengine.com/)) |
-| `ui/` | The app's look: `theme.tres` (SwiftUI-style buttons, sliders and scroll bars), the Inter font it uses on every platform, and custom controls such as `Scrubber` |
-| `branding/` | App icon layers, the rounded macOS icon, boot splash and `generate.gd`, which draws them from `branding/assets/` (`godot --path . -s branding/generate.gd`) |
-| `addons/spatial/` | `SpatialVolume3D`: a RealityKit volume on visionOS, an orbit camera elsewhere |
-
 Shared scenes use `Window` and `SpatialVolume3D` only; platform differences stay
 inside `addons/spatial/`. On desktop, a window's ornaments are drawn inside it.
 Alerts and file pickers are the system's where the platform has them; run with
 `-- --godot-dialogs` to try Godot's own, which other platforms get.
 
-## Packaging checks
+## Scalar analysis
 
-Use the matching custom Godot editor from the Run section. After importing
-project resources in that editor, run the isolated fixture tests (they do not
-write to the app's library):
+On **Fields**, use **Export statistics CSV…** to export the current draft,
+including unsaved edits, without saving or changing its ZIP. Each field/frame
+produces valid and missing sample counts, minimum, maximum and mean, with its
+name, quantity, declared unit, source and recorded `solver_time`. Times retain
+their frame order; no time unit is assumed. Byte 0 means missing, while a valid
+sample that decodes to numerical zero is included. All-missing frames have blank
+min/max/mean. These are summaries of quantized exported scalar samples, not
+estimates of solver accuracy or volume integrals.
+
+BOV imports are applied only when the whole batch passes validation. Dimensions,
+payload lengths, value ranges and spatial boxes must be valid and consistent
+within a field. With an existing timeline, solver times must match a unique frame
+exactly; unmatched times and occupied field/frame slots are rejected. Add or edit
+frame times before importing. The editor never silently replaces a frame's data.
+CSV export refuses to replace source files and keeps previous output on failure.
+
+## Tests
+
+Use the custom Godot editor described above and import project resources first.
+Fixtures run in temporary directories, outside the library:
 
 ```sh
-"$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_files_test.gd
-"$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_packaging_test.gd
+for test in zip_files zip_packaging scalar_validation scalar_import field_analysis; do
+  "$WISUALIZER_GODOT" --headless --path . --script "res://tests/${test}_test.gd"
+done
 "$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_workspace_test.gd -- --godot-dialogs
 ```
 
-The backend checks cover file bytes through save, reopen and Save As, TXT
-encodings, existing ZIP attachments, missing files, name collisions, and failed
-writes/replacements. Workspace checks cover TXT choices, file-list changes,
-editing during save, and failed Save As behavior.
+Checks cover ZIP round trips and failed writes, malformed scalar data, import
+rollback, independent numerical examples, CSV preservation and workspace actions.

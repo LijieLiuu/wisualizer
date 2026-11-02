@@ -4,6 +4,7 @@ extends SceneTree
 ## Exercises the actual workspace scene, signals, dialogs and background saves.
 
 const Workspace := preload("res://app/workspace.tscn")
+const Draft := preload("res://app/draft.gd")
 
 var _workspace: Window
 var _root := ""
@@ -39,6 +40,7 @@ func _run() -> void:
 	_test_files()
 	await _test_notes()
 	await _test_saves()
+	await _test_statistics()
 	_workspace.close()
 	await process_frame
 	print("ZIP workspace: %d checks, %d failures" % [_checks, _failures])
@@ -241,17 +243,97 @@ func _test_saves() -> void:
 	await process_frame
 
 
+func _test_statistics() -> void:
+	var button: Button = _workspace.get_node("%ExportStatistics")
+	var dialog: FileDialog = _workspace.get_node("%StatisticsFile")
+	button.pressed.emit()
+	_check(not dialog.visible and not _workspace._busy, "Statistics export without fields does not open a save dialog")
+	_check(_workspace.get_node("%Status").text.contains("scalar field"), "Statistics export explains the missing field")
+
+	var source := _write("statistics/field-input.csv", PackedByteArray([1, 255]))
+	var field := Draft.Field.new()
+	field.name = "Unsaved scalar"
+	field.quantity = "Speed"
+	field.unit = "m/s"
+	field.cells = Vector3i(2, 1, 1)
+	field.range = Vector2(0.0, 254.0)
+	field.origin = Vector3(10.0, 20.0, 30.0)
+	field.size = Vector3(2.0, 3.0, 4.0)
+	field.bricks[0] = source
+	_workspace.draft.fields.append(field)
+	_workspace.draft.times[0] = 7.5
+	var extra_model := _write("statistics/extra-model.glb", _triangle_glb(1.0))
+	_workspace.get_node("%GLBFiles").files_selected.emit(PackedStringArray([extra_model]))
+	_check(field.origin == Vector3(10.0, 20.0, 30.0) and field.size == Vector3(2.0, 3.0, 4.0), "Importing a GLB preserves the field source geometry")
+	_workspace.show_fields(0)
+	_workspace.show_page("Fields")
+	var original_target: String = _workspace.target
+	var original_zip := FileAccess.get_file_as_bytes(original_target)
+	var original_title: String = _workspace.draft.title
+	var saves_before := _saved.size()
+	button.pressed.emit()
+	_check(dialog.visible and dialog.current_file == original_target.get_file().get_basename() + "-statistics.csv", "Statistics action opens a CSV dialog with a useful default name")
+	dialog.get_cancel_button().pressed.emit()
+	await process_frame
+	_check(not dialog.visible and not _workspace._busy and _saved.size() == saves_before, "Canceling statistics export does not save or start work")
+
+	var output := _root.path_join("statistics/current")
+	dialog.file_selected.emit(output)
+	_check(_workspace._busy and _workspace.gui_disable_input and button.disabled, "Statistics worker blocks editing and repeat exports")
+	_workspace.edit_title("Must not change during export")
+	_workspace.add_frame()
+	_workspace.save()
+	_workspace.ask_export_statistics()
+	_workspace.export_statistics(_root.path_join("statistics/ignored.csv"))
+	_check(not dialog.visible, "A late statistics dialog request is ignored while exporting")
+	if not await _wait_save():
+		return
+	output += ".csv"
+	_check(not _workspace.gui_disable_input and not button.disabled, "Statistics completion restores editing and export action")
+	if not _check(FileAccess.file_exists(output), "Statistics export appends the CSV extension and writes a file"):
+		return
+	var csv := FileAccess.open(output, FileAccess.READ)
+	var header := csv.get_csv_line()
+	var row := csv.get_csv_line()
+	csv.close()
+	var expected := PackedStringArray(["field", "quantity", "unit", "frame", "solver_time", "source_file", "valid_count", "missing_count", "min", "max", "mean"])
+	if _check(header == expected and row.size() == expected.size(), "Workspace export uses the documented CSV columns"):
+		_check(row[0] == field.name and row[1] == field.quantity and row[2] == field.unit, "CSV uses the current unsaved field metadata")
+		_check(row[3].to_int() == 1 and is_equal_approx(row[4].to_float(), 7.5), "CSV uses the current unsaved timeline")
+		_check(row[6].to_int() == 2 and row[7].to_int() == 0 and is_equal_approx(row[8].to_float(), 0.0) and is_equal_approx(row[9].to_float(), 254.0) and is_equal_approx(row[10].to_float(), 127.0), "CSV statistics come from the unsaved field bytes and range")
+	_check(_workspace.get_node("%Status").text == "Exported current.csv", "Statistics completion reports the exported file")
+	_check(_workspace.target == original_target and FileAccess.get_file_as_bytes(original_target) == original_zip and _saved.size() == saves_before, "Statistics export never saves or changes the working ZIP")
+	_check(_workspace.draft.fields[0] == field and _workspace.draft.times == PackedFloat64Array([7.5]) and _workspace.draft.title == original_title, "Statistics export retains all unsaved edits and ignores editing callbacks")
+	_check(not FileAccess.file_exists(_root.path_join("statistics/ignored.csv")), "A repeated export callback cannot start a second output")
+
+	var invalid := _root.path_join("statistics/directory.csv")
+	_check(DirAccess.make_dir_recursive_absolute(invalid) == OK, "Create an invalid statistics destination")
+	dialog.file_selected.emit(invalid)
+	if not await _wait_save():
+		return
+	_check(not _workspace.gui_disable_input and not button.disabled, "Failed statistics export restores editing")
+	_check(not _workspace.get_node("%Status").text.begins_with("Exported ") and not _workspace.get_node("%Status").text.is_empty(), "Failed statistics export displays its error")
+	_check(DirAccess.dir_exists_absolute(invalid) and FileAccess.get_file_as_bytes(original_target) == original_zip, "Failed statistics export preserves the destination and ZIP")
+
+	dialog.file_selected.emit(source)
+	if not await _wait_save():
+		return
+	_check(FileAccess.get_file_as_bytes(source) == PackedByteArray([1, 255]), "Statistics export cannot overwrite a current field source")
+	_check(not _workspace.get_node("%Status").text.begins_with("Exported "), "Source overwrite protection is reported in the workspace")
+	_check(_workspace.target == original_target and _saved.size() == saves_before and _workspace.draft.fields[0] == field, "Export failures keep the draft and save target intact")
+
+
 func _wait_save() -> bool:
 	var deadline := Time.get_ticks_msec() + 15000
 	while _workspace._busy and Time.get_ticks_msec() < deadline:
 		await create_timer(0.01).timeout
-	return _check(not _workspace._busy, "Background save completes within 15 seconds")
+	return _check(not _workspace._busy, "Background operation completes within 15 seconds")
 
 
-func _triangle_glb() -> PackedByteArray:
+func _triangle_glb(height := 0.0) -> PackedByteArray:
 	var binary := PackedByteArray()
 	binary.resize(44)
-	var coordinates := [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+	var coordinates := [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, height]
 	for index in coordinates.size():
 		binary.encode_float(index * 4, coordinates[index])
 	for index in 3:
@@ -261,7 +343,7 @@ func _triangle_glb() -> PackedByteArray:
 		"nodes": [{"mesh": 0}], "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
 		"buffers": [{"byteLength": 42}],
 		"bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962}, {"buffer": 0, "byteOffset": 36, "byteLength": 6, "target": 34963}],
-		"accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0]}, {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}],
+		"accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, height]}, {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}],
 	}).to_utf8_buffer()
 	while json.size() % 4:
 		json.append(32)

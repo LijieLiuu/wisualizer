@@ -333,6 +333,14 @@ theme_type_variation = &"Caption"
 text = "Pick the brick headers EnSight writes beside each brick, such as B_Vector_meta0001; each variable becomes a field. Controllers feel the field, and the debug view shows it."
 autowrap_mode = 3
 
+[node name="ExportStatistics" type="Button" parent="Root/Content/Pages/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Export statistics for all fields and frames in this workspace, including unsaved changes"
+text = "Export statistics CSV…"
+
 [node name="Gap" type="Control" parent="Root/Content/Pages/Fields"]
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
@@ -745,6 +753,14 @@ cancel_button_text = "Cancel"
 dialog_autowrap = true
 dialog_text = "Replace the current notes, or append the imported text?"
 
+[node name="StatisticsFile" type="FileDialog" parent="."]
+unique_name_in_owner = true
+title = "Export Statistics CSV"
+file_mode = 4
+access = 2
+filters = PackedStringArray("*.csv ; CSV")
+use_native_dialog = true
+
 [node name="SaveAsFile" type="FileDialog" parent="."]
 unique_name_in_owner = true
 title = "Save As"
@@ -802,3 +818,5 @@ use_native_dialog = true
 [connection signal="confirmed" from="ImportNotesChoice" to="." method="apply_notes_import" binds= [false]]
 [connection signal="custom_action" from="ImportNotesChoice" to="." method="notes_import_action"]
 [connection signal="canceled" from="ImportNotesChoice" to="." method="cancel_notes_import"]
+[connection signal="pressed" from="Root/Content/Pages/Fields/ExportStatistics" to="." method="ask_export_statistics"]
+[connection signal="file_selected" from="StatisticsFile" to="." method="export_statistics"]

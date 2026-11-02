@@ -7,6 +7,7 @@ extends Node
 ## How far ahead of the controller's aim location the tip sits, in meters:
 ## at the end of the visionOS pointer ray, which starts at the controller's
 ## front rather than at the aim location near the heel of the hand.
+const ScalarData := preload("res://app/scalar_data.gd")
 const TIP := 0.18
 const ENTRY_FREQUENCY := 300.0
 const ENTRY_AMPLITUDE := 0.6
@@ -36,8 +37,11 @@ var _waits := {}
 
 ## Sets the brick to feel, or none when [param data] is empty.
 func set_brick(data: PackedByteArray, size: Vector3i, largest: int) -> void:
-	bytes = data
-	cells = size
+	var count := ScalarData.cell_count(size)
+	# A failed/corrupt read clears the previous frame instead of exposing stale
+	# values or allowing an out-of-range sample.
+	bytes = data if count > 0 and data.size() == count else PackedByteArray()
+	cells = size if not bytes.is_empty() else Vector3i.ZERO
 	peak = maxi(largest, 1)
 	revision += 1
 
@@ -82,9 +86,15 @@ func tip_of(controller: XRController3D) -> Vector3:
 ## The brick cell holding [param point], given in global coordinates, or
 ## [constant NO_CELL] outside the brick or without one.
 func cell_at(point: Vector3) -> Vector3i:
-	if bytes.is_empty():
+	if bytes.is_empty() or not is_instance_valid(field) or not field.is_inside_tree() or not point.is_finite():
 		return NO_CELL
-	var unit := field.global_transform.affine_inverse() * point
+	var transform := field.global_transform
+	if not ScalarData.validate_transform(transform).is_empty():
+		return NO_CELL
+	var unit := transform.affine_inverse() * point
+	# Reject outside/nonfinite coordinates before converting to integer cells.
+	if not unit.is_finite() or unit.x < 0.0 or unit.y < 0.0 or unit.z < 0.0 or unit.x >= 1.0 or unit.y >= 1.0 or unit.z >= 1.0:
+		return NO_CELL
 	var cell := Vector3i((unit * Vector3(cells)).floor())
 	return cell if is_inside(cell) else NO_CELL
 
@@ -103,4 +113,5 @@ func value_of(cell: Vector3i) -> float:
 func byte_of(cell: Vector3i) -> int:
 	if bytes.is_empty() or not is_inside(cell):
 		return 0
-	return bytes[cell.x + cells.x * (cell.y + cells.y * cell.z)]
+	var index := cell.x + cells.x * (cell.y + cells.y * cell.z)
+	return bytes[index] if index < bytes.size() else 0

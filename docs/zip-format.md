@@ -81,6 +81,13 @@ many as there are frames. Models are listed, and switched, in the order of
 | `box` | Where the grid is, in model units: `origin` is its corner, `size` its extent. Optional `axes`, three unit vectors, turn it; they default to x, y and z. |
 | `path` | A folder of bricks, one per frame, sorted by name like a model's. Each brick is `cells` bytes in all, x fastest, then y, then z. |
 
+Field dimensions must be positive integers and each brick must contain exactly
+`x * y * z` bytes. Ranges and solver times must be finite; a constant range is
+valid. Every frame needs an explicit numeric `time`, in the intended playback
+order. The spatial box must be finite and invertible. Range endpoints that
+collapse or overflow the stored numeric representation are rejected. Byte 0
+always denotes missing data, including when other bytes decode to physical zero.
+
 ### Supporting files
 
 The workspace's **Files** page accepts readable files smaller than 2 GiB each, including EnSight

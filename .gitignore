@@ -8,3 +8,8 @@
 
 /builds/*
 !/builds/.gdignore
+
+# Personal reports, plans and diagnostic output stay local.
+/.local/
+/docs/week09-weekly-report.md
+/docs/Wisualizer-Week-9-Weekly-Report.docx

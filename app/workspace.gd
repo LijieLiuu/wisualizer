@@ -5,6 +5,7 @@ extends Window
 ## a [Draft]; see docs/zip-format.md for what it saves.
 
 const Draft := preload("res://app/draft.gd")
+const FieldAnalysis := preload("res://app/field_analysis.gd")
 const NotesImages := preload("res://app/notes_images.gd")
 const NativeDialogs := preload("res://app/native_dialogs.gd")
 ## Seconds after the last keystroke before the notes preview refreshes.
@@ -147,6 +148,41 @@ func save_as(path: String) -> void:
 	_save_to(path, false)
 
 
+## Exports every current field and frame, including edits not yet saved to ZIP.
+func ask_export_statistics() -> void:
+	if _busy:
+		return
+	if draft.fields.is_empty():
+		_show_status("Import a scalar field before exporting statistics.")
+		return
+	var dialog: FileDialog = %StatisticsFile
+	dialog.current_file = target.get_file().get_basename() + "-statistics.csv"
+	dialog.popup_centered()
+
+
+func export_statistics(path: String) -> void:
+	if _busy:
+		return
+	if path.get_extension().to_lower() != "csv":
+		path += ".csv"
+	_set_busy(true, "Exporting statistics…")
+	_save_thread = Thread.new()
+	var start_error := _save_thread.start(func() -> void:
+		var error := FieldAnalysis.new().export_draft(draft, ProjectSettings.globalize_path(path))
+		_finish_statistics.call_deferred(error, path))
+	if start_error != OK:
+		_save_thread = null
+		_set_busy(false, "Could not start exporting: %s" % error_string(start_error))
+
+
+func _finish_statistics(error: String, path: String) -> void:
+	_save_thread.wait_to_finish()
+	_save_thread = null
+	_set_busy(false, error if not error.is_empty() else "Exported %s" % path.get_file())
+	# A pending notes timer may have elapsed while the worker held the draft.
+	refresh_preview()
+
+
 func ask_import(dialog_name: String) -> void:
 	if _busy:
 		return
@@ -172,6 +208,7 @@ func _set_busy(busy: bool, status: String) -> void:
 	%Save.disabled = busy
 	%SaveAs.disabled = busy
 	%Preview.disabled = busy
+	%ExportStatistics.disabled = busy
 	%Pages.modulate.a = 0.6 if busy else 1.0
 	_show_status(status)
 
@@ -263,9 +300,6 @@ func import_glbs(paths: PackedStringArray) -> void:
 		return
 	show_frames()
 	show_models(draft.models.size() - 1)
-	# Bricks imported before the models are scaled to them now.
-	for field in draft.fields:
-		draft.fit_field(field)
 	show_fields()
 
 

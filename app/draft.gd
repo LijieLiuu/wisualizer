@@ -10,6 +10,7 @@ extends RefCounted
 const Meta := preload("res://app/meta.gd")
 const GLBInfo := preload("res://app/glb_info.gd")
 const BOV := preload("res://app/bov.gd")
+const ScalarData := preload("res://app/scalar_data.gd")
 const NotesImages := preload("res://app/notes_images.gd")
 const IN_ZIP := "zip://"
 const NOTES_FILE := "notes.txt"
@@ -133,8 +134,10 @@ func open(zip_path: String) -> String:
 		field.range = entry.range
 		field.cells = entry.cells
 		field.origin = entry.box.origin
-		field.size = entry.box.basis.get_scale()
-		field.axes = entry.box.basis.orthonormalized()
+		# Keep the original factors; decomposing the box loses oblique/reflected
+		# axes and can change frame-consistency checks after reopening.
+		field.size = entry.size
+		field.axes = entry.axes
 		for frame in entry.files.size():
 			# Preserve every source brick, including explicit all-zero frames.
 			field.bricks[frame] = IN_ZIP + entry.files[frame]
@@ -214,33 +217,48 @@ func add_glbs(paths: PackedStringArray) -> String:
 	return ""
 
 
-## Adds the bricks whose headers are at [param paths] as fields, one per
-## variable. Without frames yet, the frames come from the bricks' solver
-## times; otherwise each brick goes to the frame nearest its time. Returns an
-## empty string, or what is wrong with the bricks.
+## Imports a complete, consistent batch before changing the draft. Existing
+## frames must match solver times exactly; no nearest-frame guesses or overwrites.
 func add_bovs(paths: PackedStringArray) -> String:
+	if paths.is_empty():
+		return "Choose at least one brick header."
 	var bovs := []
 	for file in paths:
-		var bov = BOV.read(file)
-		if bov == null:
-			return "%s isn't a brick header with its data beside it." % file.get_file()
-		bovs.append(bov)
-	if bovs.is_empty():
-		return "Choose at least one brick header."
-	if auto_frame:
-		times = PackedFloat64Array()
-		auto_frame = false
-	if times.is_empty():
+		var result := BOV.read_checked(file)
+		if not result.error.is_empty():
+			return result.error
+		bovs.append(result.value)
+	var candidate_times := PackedFloat64Array() if auto_frame else times.duplicate()
+	if candidate_times.is_empty():
 		var steps := {}
 		for bov in bovs:
 			steps[bov.time] = true
-		times = PackedFloat64Array(steps.keys())
-		times.sort()
+		candidate_times = PackedFloat64Array(steps.keys())
+		candidate_times.sort()
+	for time in candidate_times:
+		if not is_finite(time):
+			return "Every frame needs a finite solver time."
+	var candidate_fields: Array[Field] = []
+	var by_name := {}
+	for existing in fields:
+		var error := ScalarData.validate_metadata(existing.range, existing.cells, _field_box(existing))
+		if not error.is_empty():
+			return "%s: %s" % [existing.name, error]
+		if by_name.has(existing.name):
+			return "Two fields are named %s. Rename one before importing." % existing.name
+		var copied := _copy_field(existing)
+		candidate_fields.append(copied)
+		by_name[copied.name] = copied
 	for bov in bovs:
-		var field: Field = null
-		for existing in fields:
-			if existing.name == bov.variable:
-				field = existing
+		var frame := -1
+		for index in candidate_times.size():
+			if candidate_times[index] == bov.time:
+				if frame >= 0:
+					return "Solver time %s matches more than one frame. Give frames unique times before importing." % str(bov.time)
+				frame = index
+		if frame < 0:
+			return "Solver time %s has no matching frame. Add or edit the frame time before importing." % str(bov.time)
+		var field: Field = by_name.get(bov.variable)
 		if field == null:
 			field = Field.new()
 			field.name = bov.variable
@@ -249,12 +267,35 @@ func add_bovs(paths: PackedStringArray) -> String:
 			field.origin = bov.origin
 			field.size = bov.size
 			field.axes = bov.axes
-			fields.append(field)
-			fit_field(field)
-		elif field.cells != bov.cells:
-			return "%s has %s cells, but %s has %s." % [bov.data.get_file(), bov.cells, field.name, field.cells]
-		field.bricks[_nearest(bov.time)] = bov.data
+			candidate_fields.append(field)
+			by_name[field.name] = field
+		elif field.cells != bov.cells or field.range != bov.range or _field_box(field) != Transform3D(bov.axes * Basis.from_scale(bov.size), bov.origin):
+			return "%s has a different grid, value range, or spatial box from %s. Import it as a separate field." % [bov.data.get_file(), field.name]
+		if field.bricks.has(frame):
+			return "%s already has data at solver time %s. No files were imported." % [field.name, str(bov.time)]
+		field.bricks[frame] = bov.data
+	times = candidate_times
+	fields = candidate_fields
+	auto_frame = false
 	return ""
+
+
+static func _copy_field(source: Field) -> Field:
+	var copied := Field.new()
+	copied.name = source.name
+	copied.quantity = source.quantity
+	copied.unit = source.unit
+	copied.range = source.range
+	copied.cells = source.cells
+	copied.origin = source.origin
+	copied.size = source.size
+	copied.axes = source.axes
+	copied.bricks = source.bricks.duplicate()
+	return copied
+
+
+static func _field_box(field: Field) -> Transform3D:
+	return Transform3D(field.axes * Basis.from_scale(field.size), field.origin)
 
 
 ## Grows or shrinks [param field]'s box about its center until it spans
@@ -309,6 +350,68 @@ func read_source(source: String) -> PackedByteArray:
 		_zip_lock.unlock()
 		return bytes
 	return FileAccess.get_file_as_bytes(source)
+
+
+## The verified scalar bytes for one current draft frame, including edits that
+## have not been saved. Unassigned frames explicitly contain only missing data.
+func read_brick_checked(field: Field, frame: int) -> Dictionary:
+	var error := ScalarData.validate_metadata(field.range, field.cells, _field_box(field))
+	if not error.is_empty():
+		return {bytes = PackedByteArray(), error = error}
+	if frame < 0 or frame >= times.size():
+		return {bytes = PackedByteArray(), error = "The requested frame does not exist."}
+	var expected := ScalarData.cell_count(field.cells)
+	var bytes := PackedByteArray()
+	if not field.bricks.has(frame):
+		if bytes.resize(expected) != OK:
+			return {bytes = PackedByteArray(), error = "Not enough memory for the missing scalar frame."}
+		return {bytes = bytes, error = ""}
+	var source: String = field.bricks[frame]
+	if source.begins_with(IN_ZIP):
+		var path := source.trim_prefix(IN_ZIP)
+		_zip_lock.lock()
+		var found: bool = _zip != null and _zip_entries.has(path) and not _zip_entries[path].directory
+		var length: int = _zip_entries[path].size if found else -1
+		if found and length == expected:
+			bytes = _zip.read_file(path)
+		_zip_lock.unlock()
+		if not found or length != expected:
+			return {bytes = PackedByteArray(), error = "The source brick %s is missing or has the wrong size." % path}
+	else:
+		var handle := FileAccess.open(source, FileAccess.READ)
+		if handle == null:
+			return {bytes = PackedByteArray(), error = "Couldn't read %s." % source}
+		if handle.get_length() != expected:
+			handle.close()
+			return {bytes = PackedByteArray(), error = "%s must contain exactly %d scalar bytes." % [source.get_file(), expected]}
+		bytes = handle.get_buffer(expected)
+		handle.close()
+	error = ScalarData.validate(bytes, field.range, field.cells)
+	return {bytes = bytes if error.is_empty() else PackedByteArray(), error = error}
+
+
+func source_zip_path() -> String:
+	return _zip_path
+
+
+## Local source files must never be replaced by a statistics export.
+func source_files() -> PackedStringArray:
+	var paths := {}
+	for model in models:
+		for path in model.files:
+			paths[path] = true
+	for field in fields:
+		for path in field.bricks.values():
+			paths[path] = true
+	for path in images.values():
+		paths[path] = true
+	for path in attachments.values():
+		paths[path] = true
+	var result := PackedStringArray()
+	for path: String in paths:
+		if not path.begins_with(IN_ZIP):
+			result.append(path)
+	return result
 
 
 ## Adds supporting files as one batch. Existing entries are never overwritten.
@@ -369,6 +472,9 @@ static func _decode_notes(bytes: PackedByteArray) -> Dictionary:
 func problems() -> String:
 	if times.is_empty():
 		return "Add a frame, or import GLBs or bricks that have solver times."
+	for time in times:
+		if not is_finite(time):
+			return "Every frame needs a finite solver time."
 	if models.is_empty():
 		return "Import a GLB."
 	for model in models:
@@ -379,8 +485,14 @@ func problems() -> String:
 	for field in fields:
 		if field.name.strip_edges().is_empty():
 			return "A field has no name."
-		if field.cells.x <= 0 or field.cells.y <= 0 or field.cells.z <= 0:
-			return "%s has no cells." % field.name
+		var error := ScalarData.validate_metadata(field.range, field.cells, _field_box(field))
+		if not error.is_empty():
+			return "%s: %s" % [field.name, error]
+		for frame in field.bricks:
+			if not frame is int or frame < 0 or frame >= times.size():
+				return "%s has data assigned to a nonexistent frame." % field.name
+			if not field.bricks[frame] is String or field.bricks[frame].is_empty():
+				return "%s has an invalid brick source." % field.name
 	var plan := _plan()
 	if not plan.error.is_empty():
 		return plan.error
@@ -459,7 +571,7 @@ func _plan() -> Dictionary:
 		for file: String in attachments:
 			_plan_file(plan, seen, file, attachments[file])
 			manifest.attachments.append(file)
-	generated[Meta.MANIFEST] = JSON.stringify(manifest, "\t").to_utf8_buffer()
+	generated[Meta.MANIFEST] = JSON.stringify(manifest, "\t", true, true).to_utf8_buffer()
 	return plan
 
 
@@ -575,14 +687,6 @@ func _store_source(packer: ZIPPacker, file: String, source: String) -> String:
 	handle.close()
 	var end := packer.close_file()
 	return "" if result == OK and end == OK else "Couldn't copy %s into the ZIP." % source
-
-
-func _nearest(time: float) -> int:
-	var best := 0
-	for index in times.size():
-		if absf(times[index] - time) < absf(times[best] - time):
-			best = index
-	return best
 
 
 static func _folder(name: String) -> String:
