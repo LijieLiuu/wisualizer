@@ -38,6 +38,33 @@ way, and **Reset** in the options turns it back. On desktop, drag to orbit the v
 the notes and the options (speed, loop, debug view). With a keyboard, Space
 plays or pauses and the arrow keys step a frame.
 
+### Hand gesture probes on Vision Pro
+
+Open **Options**, turn on **Probe**, and choose **Place A** or **Place B**.
+Pinch the field box, move your hand in three dimensions to move the sample,
+then release inside the box to pin it. Probe mode pauses playback and fits the
+whole selected field inside the volume. Turn Probe off to rotate the model;
+controller feedback and the **Debug** view remain available.
+
+A and B show the scalar value and declared unit at each cell. **B − A** compares
+the two readings. Play or step through frames to inspect the same field locations
+at later solver times. Pins follow the field when the model rotates or the volume
+resizes. **Clear probes**, switching fields, or closing the document removes them.
+An outside release or canceled gesture restores the previous pin. Missing cells
+show **No data**; a valid physical zero remains a value. These readings describe
+the quantized scalar samples stored in the ZIP.
+
+This feature consumes GodotRealityKit's `InputEventSpatialTouch` and
+`InputEventSpatialDrag` input-device positions during a system gesture. It does
+not provide continuous finger-joint tracking. Use the matching custom engine and
+a recent `arvr4mp` plugin with pose flags and canceled-touch delivery; the event
+contract was checked against plugin revision `922fc2c`. Probe controls appear on
+visionOS and require these event classes. If a gesture has no valid pose, it
+cannot place a sample. Fields with sheared axes disable Probe with an explanatory
+tooltip because the current native renderer cannot preserve that transform.
+Rotated fields and nonuniform axis scales remain supported. Hand movement and usability still need testing on a
+physical Vision Pro; desktop tests do not verify that behavior.
+
 ## ZIPs
 
 A ZIP has a `meta.json` that says where its models, fields, notes and images
@@ -129,7 +156,7 @@ Use the custom Godot editor described above and import project resources first.
 Fixtures run in temporary directories, outside the library:
 
 ```sh
-for test in zip_files zip_packaging scalar_validation scalar_import field_analysis; do
+for test in zip_files zip_packaging scalar_validation scalar_import field_analysis spatial_probe field_probes probe_document; do
   "$WISUALIZER_GODOT" --headless --path . --script "res://tests/${test}_test.gd"
 done
 "$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_workspace_test.gd -- --godot-dialogs
@@ -137,3 +164,7 @@ done
 
 Checks cover ZIP round trips and failed writes, malformed scalar data, import
 rollback, independent numerical examples, CSV preservation and workspace actions.
+Probe tests cover affine coordinates, A/B comparison, cancellation, invalid input,
+frame changes, independent documents and scaled control layouts. The spatial
+event adapter tests report a skip when the native RealityKit classes are absent;
+install the matching addon to run those checks as well.

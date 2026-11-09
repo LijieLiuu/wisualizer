@@ -1,56 +1,112 @@
 extends Node3D
-## Shows where each controller feels the field, like a game engine's light
-## probe debug view: the brick cell at the controller's tip as a translucent
-## cube colored by its value, and a white label over it with the cell's
-## position and value, in the field's unit. Only shows while visible.
-##
-## Lives beside the Window's content, with no transform of its own, so its
-## local coordinates are the model's.
+## Shows field cells sampled by controllers or the A/B inspection points.
+## Inspection points are stored in the field's unit cube, so pinned samples
+## follow the model and keep their locations when the frame changes.
 
 const Meta := preload("res://app/meta.gd")
+const ScalarData := preload("res://app/scalar_data.gd")
 const OPACITY := 0.55
 const FONT_SIZE := 48
 ## The label's height and its gap above the cube, in meters.
 const LABEL_HEIGHT := 0.02
 const LABEL_GAP := 0.01
 
-## Samples the field for us, as it does for haptics.
 var touch: Node
 var volume: SpatialVolume3D
 ## Its global transform maps a unit cube onto the current brick.
 var field: Node3D
-## The field shown, for its values' units.
 var shown_field: Meta.Field
+## Slot 0 (A) and slot 1 (B), each in the field's unit coordinates.
+var inspection_points: Dictionary = {}
+var show_controllers := true
 
 var _colors := Gradient.new()
-## Per controller: its cube, its label, and the cell and brick revision
-## they show.
+## Stable source key to its cube and label. Removed sources are discarded,
+## rather than leaving the last tracked cell visible.
 var _probes := {}
 
 
 func _init() -> void:
-	# Blue to red through cyan, green and yellow, as EnSight's default palette.
 	_colors.offsets = PackedFloat32Array([0.0, 0.25, 0.5, 0.75, 1.0])
 	_colors.colors = PackedColorArray([Color(0, 0, 1), Color(0, 1, 1), Color(0, 1, 0), Color(1, 1, 0), Color(1, 0, 0)])
 
 
 func _process(_delta: float) -> void:
-	if not visible or volume == null:
+	update_probes()
+
+
+## Rebuilds the visible source set from current input and current brick data.
+func update_probes() -> void:
+	if not is_inside_tree() or not is_visible_in_tree() or not get_window().visible \
+			or not is_instance_valid(touch) or not touch.is_inside_tree() \
+			or not is_instance_valid(volume) or not volume.is_inside_tree() \
+			or not is_instance_valid(field) or not field.is_inside_tree() \
+			or touch.bytes.is_empty() \
+			or not ScalarData.validate_transform(field.global_transform).is_empty() \
+			or not ScalarData.validate_transform(global_transform).is_empty():
+		_clear_visuals()
 		return
-	for controller in volume.get_controllers():
-		var probe: Dictionary = _probes.get(controller, {})
-		if probe.is_empty():
-			probe = _add_probe()
-			_probes[controller] = probe
-		var cell: Vector3i = touch.cell_at(touch.tip_of(controller)) if controller.get_has_tracking_data() else touch.NO_CELL
-		# Like the haptics, only a cell with a value counts.
-		var shown: bool = touch.value_of(cell) > 0.0
-		probe.cube.visible = shown
-		probe.label.visible = shown
-		if shown and (cell != probe.cell or touch.revision != probe.revision):
-			probe.cell = cell
-			probe.revision = touch.revision
-			_show(probe, cell)
+	var meters_per_unit := _meters_per_unit()
+	if meters_per_unit <= 0.0:
+		_clear_visuals()
+		return
+	var sources := {}
+	if show_controllers:
+		for controller in volume.get_controllers():
+			if not is_instance_valid(controller) or not controller.is_inside_tree() or not controller.get_has_tracking_data():
+				continue
+			var cell: Vector3i = touch.cell_at(touch.tip_of(controller))
+			# Controllers keep their existing behavior: missing cells are silent.
+			if touch.byte_of(cell) != 0:
+				sources[controller.get_instance_id()] = {cell = cell, title = ""}
+	for slot in [0, 1]:
+		var point: Variant = inspection_points.get(slot)
+		if not point is Vector3 or not (point as Vector3).is_finite():
+			continue
+		var cell: Vector3i = touch.cell_at_unit(point)
+		if cell != touch.NO_CELL:
+			sources["inspection_%d" % slot] = {cell = cell, title = "A" if slot == 0 else "B"}
+	# A and B can deliberately compare the same cell. Share one cube and
+	# label in that case, rather than drawing two labels at the same point.
+	if sources.has("inspection_0") and sources.has("inspection_1") \
+			and sources.inspection_0.cell == sources.inspection_1.cell:
+		sources.inspection_0.title = "A / B"
+		sources.erase("inspection_1")
+	for key in _probes.keys():
+		if not sources.has(key):
+			_remove_probe(key)
+	for key in sources:
+		if not _probes.has(key):
+			_probes[key] = _add_probe()
+		var source: Dictionary = sources[key]
+		_show(_probes[key], source.cell, source.title, meters_per_unit)
+
+
+func _meters_per_unit() -> float:
+	if not is_finite(volume.size) or volume.size <= 0.0:
+		return 0.0
+	var physical := volume.get_measured_size()
+	if not physical.is_finite() or physical[volume.keep_aspect] <= 0.0:
+		physical = volume.window_size
+	if not physical.is_finite() or physical[volume.keep_aspect] <= 0.0:
+		return 0.0
+	var scale := physical[volume.keep_aspect] / volume.size
+	return scale if is_finite(scale) and scale > 0.0 else 0.0
+
+
+func _clear_visuals() -> void:
+	for key in _probes.keys():
+		_remove_probe(key)
+
+
+func _remove_probe(key: Variant) -> void:
+	var probe: Dictionary = _probes[key]
+	# Hide immediately; queue_free() runs at the end of the frame.
+	probe.cube.hide()
+	probe.label.hide()
+	probe.cube.queue_free()
+	probe.label.queue_free()
+	_probes.erase(key)
 
 
 func _add_probe() -> Dictionary:
@@ -67,28 +123,33 @@ func _add_probe() -> Dictionary:
 	label.no_depth_test = true
 	label.font_size = FONT_SIZE
 	label.outline_size = 12
-	# The label grows up from its position, so it stays clear of the cube.
 	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	add_child(label)
-	return {cube = cube, label = label, cell = touch.NO_CELL, revision = -1}
+	return {cube = cube, label = label}
 
 
-## Places the cube on [param cell] and labels it.
-func _show(probe: Dictionary, cell: Vector3i) -> void:
-	# From the brick's unit cube to our coordinates, which are the model's.
+## Updates placement even when the sampled cell is unchanged: a resize or
+## field transform can change the cube and the label's physical scale.
+func _show(probe: Dictionary, cell: Vector3i, title: String, meters_per_unit: float) -> void:
 	var unit := global_transform.affine_inverse() * field.global_transform
 	var cells := Vector3(touch.cells)
 	var center := unit * ((Vector3(cell) + Vector3.ONE * 0.5) / cells)
 	var cube: MeshInstance3D = probe.cube
 	cube.transform = Transform3D(unit.basis * Basis.from_scale(Vector3.ONE / cells), center)
+	var byte: int = touch.byte_of(cell)
 	var value: float = touch.value_of(cell)
-	var color := _colors.sample(value)
+	var color := _colors.sample(value) if byte != 0 else Color(0.6, 0.6, 0.6)
 	(cube.material_override as StandardMaterial3D).albedo_color = Color(color, OPACITY)
 
-	# The label keeps its physical size, whatever the volume's scale.
-	var meters_per_unit := volume.get_measured_size()[volume.keep_aspect] / volume.size
 	var label: Label3D = probe.label
 	label.pixel_size = LABEL_HEIGHT / meters_per_unit / FONT_SIZE
-	label.position = center + Vector3.UP * ((unit.basis.get_scale().y / cells.y) * 0.5 + LABEL_GAP / meters_per_unit)
-	var reading: String = shown_field.format(shown_field.value_of(touch.byte_of(cell))) if shown_field else "%.2f" % value
-	label.text = "(%.1f, %.1f, %.1f)\n%s" % [center.x, center.y, center.z, reading]
+	# Include all three cell axes when finding its vertical half-extent.
+	var half_height := (absf(cube.basis.x.y) + absf(cube.basis.y.y) + absf(cube.basis.z.y)) * 0.5
+	label.position = center + Vector3.UP * (half_height + LABEL_GAP / meters_per_unit)
+	var reading := "No data"
+	if byte != 0:
+		reading = shown_field.format(shown_field.value_of(byte)) if shown_field else "%.2f" % value
+	var heading := "" if title.is_empty() else title + " · "
+	if shown_field and not shown_field.quantity.is_empty():
+		heading += shown_field.quantity + "\n"
+	label.text = heading + "(%.1f, %.1f, %.1f)\n%s" % [center.x, center.y, center.z, reading]

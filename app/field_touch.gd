@@ -91,7 +91,14 @@ func cell_at(point: Vector3) -> Vector3i:
 	var transform := field.global_transform
 	if not ScalarData.validate_transform(transform).is_empty():
 		return NO_CELL
-	var unit := transform.affine_inverse() * point
+	return cell_at_unit(transform.affine_inverse() * point)
+
+
+## Samples a saved location directly in field coordinates, avoiding a
+## world-space round trip when the volume is far from the origin.
+func cell_at_unit(unit: Vector3) -> Vector3i:
+	if bytes.is_empty():
+		return NO_CELL
 	# Reject outside/nonfinite coordinates before converting to integer cells.
 	if not unit.is_finite() or unit.x < 0.0 or unit.y < 0.0 or unit.z < 0.0 or unit.x >= 1.0 or unit.y >= 1.0 or unit.z >= 1.0:
 		return NO_CELL

@@ -28,6 +28,13 @@ material = SubResource("Edge")
 size = Vector3(0.006, 0.006, 1.006)
 
 [sub_resource type="BoxShape3D" id="GrabShape"]
+resource_local_to_scene = true
+
+[sub_resource type="BoxShape3D" id="ProbeShape"]
+size = Vector3(1, 1, 1)
+
+[sub_resource type="ButtonGroup" id="ProbeGroup"]
+resource_local_to_scene = true
 
 [sub_resource type="ButtonGroup" id="SpeedGroup"]
 
@@ -64,6 +71,15 @@ script = ExtResource("field_probes")
 [node name="Field" type="Node3D" parent="Model/Turntable"]
 unique_name_in_owner = true
 visible = false
+
+[node name="ProbeGrab" type="StaticBody3D" parent="Model/Turntable/Field"]
+unique_name_in_owner = true
+input_ray_pickable = false
+
+[node name="Shape" type="CollisionShape3D" parent="Model/Turntable/Field/ProbeGrab"]
+position = Vector3(0.5, 0.5, 0.5)
+shape = SubResource("ProbeShape")
+disabled = true
 
 [node name="X0" type="MeshInstance3D" parent="Model/Turntable/Field"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0, 0)
@@ -203,15 +219,15 @@ visible = false
 placement = 6
 ornament_anchor = Vector3(0.5, 0, 1)
 
-[node name="Bar" type="HBoxContainer" parent="Model/Options"]
-anchors_preset = 15
+[node name="Bar" type="HFlowContainer" parent="Model/Options"]
 anchor_right = 1.0
-anchor_bottom = 1.0
+offset_bottom = 56.0
 offset_left = 16.0
 offset_right = -16.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 12
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 8
 alignment = 1
 
 [node name="SpeedLabel" type="Label" parent="Model/Options/Bar"]
@@ -273,6 +289,15 @@ size_flags_vertical = 4
 tooltip_text = "Show the field box, and the field around each controller"
 text = "Debug"
 
+[node name="ProbeEnabled" type="CheckButton" parent="Model/Options/Bar"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Pause and place two scalar probes with a pinch. Turn off to rotate the model."
+text = "Probe"
+
 [node name="Reset" type="Button" parent="Model/Options/Bar"]
 unique_name_in_owner = true
 visible = false
@@ -281,6 +306,48 @@ layout_mode = 2
 size_flags_vertical = 4
 tooltip_text = "Turn the model back the way it opened"
 text = "Reset"
+
+[node name="ProbeTools" type="VBoxContainer" parent="Model/Options"]
+unique_name_in_owner = true
+visible = false
+anchor_right = 1.0
+offset_left = 20.0
+offset_top = 56.0
+offset_right = -20.0
+theme_override_constants/separation = 8
+
+[node name="Buttons" type="HBoxContainer" parent="Model/Options/ProbeTools"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ProbeA" type="Button" parent="Model/Options/ProbeTools/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+button_group = SubResource("ProbeGroup")
+text = "Place A"
+
+[node name="ProbeB" type="Button" parent="Model/Options/ProbeTools/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+toggle_mode = true
+button_group = SubResource("ProbeGroup")
+text = "Place B"
+
+[node name="ClearProbes" type="Button" parent="Model/Options/ProbeTools/Buttons"]
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+text = "Clear probes"
+
+[node name="ProbeReadout" type="Label" parent="Model/Options/ProbeTools"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+autowrap_mode = 3
+text = "Select A or B, then pinch the field box."
 
 [node name="Notes" type="Window" parent="Model"]
 title = "Notes"
@@ -315,3 +382,9 @@ bbcode_enabled = true
 [connection signal="close_requested" from="Model/Notes" to="." method="close_notes"]
 [connection signal="meta_clicked" from="Model/Notes/Margin/Text" to="." method="open_link"]
 [connection signal="toggled" from="Model/Controls/Bar/OptionsButton" to="." method="show_options"]
+
+[connection signal="input_event" from="Model/Turntable/Field/ProbeGrab" to="." method="probe_by_drag"]
+[connection signal="toggled" from="Model/Options/Bar/ProbeEnabled" to="." method="set_probe_mode"]
+[connection signal="pressed" from="Model/Options/ProbeTools/Buttons/ProbeA" to="." method="select_probe" binds=[0]]
+[connection signal="pressed" from="Model/Options/ProbeTools/Buttons/ProbeB" to="." method="select_probe" binds=[1]]
+[connection signal="pressed" from="Model/Options/ProbeTools/Buttons/ClearProbes" to="." method="clear_probes"]
