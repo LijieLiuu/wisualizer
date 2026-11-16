@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://app/field_probes.gd" id="field_probes"]
 [ext_resource type="Script" path="res://ui/scrubber.gd" id="scrubber"]
 [ext_resource type="Script" path="res://app/document.gd" id="1"]
+[ext_resource type="PackedScene" path="res://app/probe_inspector.tscn" id="probe_history"]
 [ext_resource type="Script" path="res://app/field_touch.gd" id="touch"]
 [ext_resource type="Script" path="res://addons/spatial/spatial_volume_3d.gd" id="2"]
 [ext_resource type="Script" path="res://app/resize_hint.gd" id="4"]
@@ -298,6 +299,13 @@ size_flags_vertical = 4
 tooltip_text = "Pause and place two scalar probes with a pinch. Turn off to rotate the model."
 text = "Probe"
 
+[node name="Inspect" type="Button" parent="Model/Options/Bar"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Compare probe histories, export results, or restore saved positions."
+text = "Inspect…"
+
 [node name="Reset" type="Button" parent="Model/Options/Bar"]
 unique_name_in_owner = true
 visible = false
@@ -349,6 +357,8 @@ theme_override_font_sizes/font_size = 18
 autowrap_mode = 3
 text = "Select A or B, then pinch the field box."
 
+[node name="ProbeHistory" parent="Model" instance=ExtResource("probe_history")]
+
 [node name="Notes" type="Window" parent="Model"]
 title = "Notes"
 size = Vector2i(1000, 1200)
@@ -388,3 +398,6 @@ bbcode_enabled = true
 [connection signal="pressed" from="Model/Options/ProbeTools/Buttons/ProbeA" to="." method="select_probe" binds=[0]]
 [connection signal="pressed" from="Model/Options/ProbeTools/Buttons/ProbeB" to="." method="select_probe" binds=[1]]
 [connection signal="pressed" from="Model/Options/ProbeTools/Buttons/ClearProbes" to="." method="clear_probes"]
+
+[connection signal="pressed" from="Model/Options/Bar/Inspect" to="." method="show_probe_history"]
+[connection signal="close_requested" from="Model/ProbeHistory" to="." method="hide_probe_history"]

@@ -1,5 +1,5 @@
 extends RefCounted
-## Reads ZIP entry sizes and directory flags without inflating file contents.
+## Reads ZIP entry sizes, checksums and directory flags without inflating file contents.
 ## Names come from ZIPReader.get_files(), in central-directory order, so this
 ## index uses the engine's filename decoding. CRC/data failures remain the
 ## reader's responsibility; callers must compare returned bytes with size.
@@ -153,7 +153,7 @@ static func inspect(path: String, names: PackedStringArray) -> Dictionary:
 			return _failed(file, "The empty ZIP entry %s has an invalid checksum." % name)
 		if directory and entry_size != 0:
 			return _failed(file, "The ZIP directory %s unexpectedly contains file data." % name)
-		entries[name] = {size = entry_size, directory = directory}
+		entries[name] = {size = entry_size, crc32 = header.decode_u32(16), directory = directory}
 		cursor = end_entry
 	# The optional central-directory digital signature is metadata, not a file.
 	if cursor < central_end:

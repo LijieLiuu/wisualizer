@@ -42,7 +42,7 @@ class Field:
 
 	## A value with its unit, such as "0.067 T".
 	func format(value: float) -> String:
-		var text := String.num(value, 3) if absf(value) >= 0.01 or value == 0.0 else "%.2e" % value
+		var text := String.num(value, 3) if absf(value) >= 0.01 or value == 0.0 else String.num_scientific(value)
 		return text if unit.is_empty() else "%s %s" % [text, unit]
 
 

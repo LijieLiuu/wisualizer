@@ -65,6 +65,34 @@ tooltip because the current native renderer cannot preserve that transform.
 Rotated fields and nonuniform axis scales remain supported. Hand movement and usability still need testing on a
 physical Vision Pro; desktop tests do not verify that behavior.
 
+### Probe history and saved positions
+
+Open **Options → Inspect…** on desktop or Vision Pro. Use committed gesture pins,
+or enter zero-based **(x, y, z)** cell indices and choose **Set A** or **Set B**
+to place a probe at that cell's center. **Analyze** reads all recorded frames
+without changing playback. Select a frame in the chart to pause and inspect it.
+The horizontal axis is frame order: solver times can repeat or decrease, and no
+time unit is assumed. Missing samples leave gaps; physical zero remains a value.
+For dense histories, the chart retains extrema in complete pixel columns and
+leaves columns containing missing samples blank. CSV retains every sample.
+
+**Export CSV…** includes the source identity, field/unit, normalized locations,
+zero-based cells, one-based frame, recorded solver time, raw bytes, validity,
+A/B values and B − A when both are valid. Values describe fixed field locations
+and quantized stored samples, not moving particle trajectories. Analysis uses an
+independent reader and at most one scalar brick at a time; placement changes,
+field changes and document closure cancel obsolete work. **Cancel** stops a job
+after the current ZIP read completes. Failed or canceled writes preserve old output.
+
+**Save points…** writes a small JSON session. **Load points…** restores the selected
+field and committed locations only when the same source ZIP path and metadata
+identity still match; readings are recalculated. The identity uses metadata and
+ZIP entry sizes/CRCs as a change detector, not proof of file provenance. Moving
+or changing the source requires a new session. Exports cannot overwrite the
+source ZIP or the currently loaded/saved session. Source-data checksum failures
+stop analysis instead of becoming missing values. Saved sessions and exports are
+user-selected files; the application does not modify the source package.
+
 ## ZIPs
 
 A ZIP has a `meta.json` that says where its models, fields, notes and images
@@ -156,7 +184,7 @@ Use the custom Godot editor described above and import project resources first.
 Fixtures run in temporary directories, outside the library:
 
 ```sh
-for test in zip_files zip_packaging scalar_validation scalar_import field_analysis spatial_probe field_probes probe_document; do
+for test in zip_files zip_packaging scalar_validation scalar_import field_analysis spatial_probe field_probes probe_document probe_history probe_timeline probe_history_document; do
   "$WISUALIZER_GODOT" --headless --path . --script "res://tests/${test}_test.gd"
 done
 "$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_workspace_test.gd -- --godot-dialogs
@@ -168,3 +196,8 @@ Probe tests cover affine coordinates, A/B comparison, cancellation, invalid inpu
 frame changes, independent documents and scaled control layouts. The spatial
 event adapter tests report a skip when the native RealityKit classes are absent;
 install the matching addon to run those checks as well.
+
+History tests cover independent A/B numerical fixtures, missing versus zero,
+source changes, session validation, transactional exports, cancellation, document
+isolation and timeline selection. Chart tests cover gaps, dense data, edge ranges,
+resizing and cursor updates without rebuilding the full history.

@@ -140,3 +140,23 @@ func clear() -> void:
 	_candidate_valid = false
 	_pins.clear()
 	changed.emit()
+
+
+## Histories and saved sessions must never include an uncommitted drag.
+func get_committed_points() -> Dictionary:
+	return _pins.duplicate()
+
+
+## Restore validated locations atomically, or keep the current inspection.
+func set_points(points: Dictionary) -> bool:
+	for slot in points:
+		if not slot is int or slot not in [0, 1] or not points[slot] is Vector3:
+			return false
+		var point: Vector3 = points[slot]
+		if not point.is_finite() or point.x < 0.0 or point.y < 0.0 or point.z < 0.0 or point.x >= 1.0 or point.y >= 1.0 or point.z >= 1.0:
+			return false
+	_active = false
+	_candidate_valid = false
+	_pins = points.duplicate()
+	changed.emit()
+	return true

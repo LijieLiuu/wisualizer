@@ -1,0 +1,164 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://app/probe_inspector.gd" id="inspector"]
+[ext_resource type="Script" path="res://ui/probe_timeline.gd" id="timeline"]
+
+[node name="ProbeHistory" type="Window"]
+title = "Probe history"
+size = Vector2i(1560, 1400)
+min_size = Vector2i(1040, 1120)
+visible = false
+placement = 2
+script = ExtResource("inspector")
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="Scroll" type="ScrollContainer" parent="Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Column" type="VBoxContainer" parent="Margin/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="Help" type="Label" parent="Margin/Scroll/Column"]
+layout_mode = 2
+autowrap_mode = 3
+text = "Place A/B with Probe gestures, or set exact cells below. Analyze their values across all recorded frames."
+
+[node name="Readout" type="Label" parent="Margin/Scroll/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "No scalar field selected."
+
+[node name="CellLabel" type="Label" parent="Margin/Scroll/Column"]
+layout_mode = 2
+text = "Exact cell (x, y, z) · zero-based indices"
+
+[node name="Cells" type="HFlowContainer" parent="Margin/Scroll/Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+
+[node name="CellX" type="SpinBox" parent="Margin/Scroll/Column/Cells"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 44)
+layout_mode = 2
+tooltip_text = "Cell x index"
+rounded = true
+
+[node name="CellY" type="SpinBox" parent="Margin/Scroll/Column/Cells"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 44)
+layout_mode = 2
+tooltip_text = "Cell y index"
+rounded = true
+
+[node name="CellZ" type="SpinBox" parent="Margin/Scroll/Column/Cells"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 44)
+layout_mode = 2
+tooltip_text = "Cell z index"
+rounded = true
+
+[node name="SetA" type="Button" parent="Margin/Scroll/Column/Cells"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Set A"
+
+[node name="SetB" type="Button" parent="Margin/Scroll/Column/Cells"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Set B"
+
+[node name="Clear" type="Button" parent="Margin/Scroll/Column/Cells"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Clear"
+
+[node name="Actions" type="HFlowContainer" parent="Margin/Scroll/Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+
+[node name="Analyze" type="Button" parent="Margin/Scroll/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Analyze"
+
+[node name="Cancel" type="Button" parent="Margin/Scroll/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Cancel"
+disabled = true
+
+[node name="Export" type="Button" parent="Margin/Scroll/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Export CSV…"
+disabled = true
+
+[node name="SavePoints" type="Button" parent="Margin/Scroll/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Save points…"
+
+[node name="LoadPoints" type="Button" parent="Margin/Scroll/Column/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Load points…"
+
+[node name="Timeline" type="Control" parent="Margin/Scroll/Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 220)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("timeline")
+
+[node name="Progress" type="ProgressBar" parent="Margin/Scroll/Column"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+show_percentage = false
+
+[node name="Status" type="Label" parent="Margin/Scroll/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "Set at least one probe, then select Analyze."
+
+[node name="File" type="FileDialog" parent="."]
+access = 2
+use_native_dialog = true
+
+[connection signal="pressed" from="Margin/Scroll/Column/Cells/SetA" to="." method="place_cell" binds=[0]]
+[connection signal="pressed" from="Margin/Scroll/Column/Cells/SetB" to="." method="place_cell" binds=[1]]
+[connection signal="pressed" from="Margin/Scroll/Column/Cells/Clear" to="." method="clear_points"]
+[connection signal="pressed" from="Margin/Scroll/Column/Actions/Analyze" to="." method="analyze"]
+[connection signal="pressed" from="Margin/Scroll/Column/Actions/Cancel" to="." method="cancel_analysis"]
+[connection signal="pressed" from="Margin/Scroll/Column/Actions/Export" to="." method="ask_file" binds=["export"]]
+[connection signal="pressed" from="Margin/Scroll/Column/Actions/SavePoints" to="." method="ask_file" binds=["save"]]
+[connection signal="pressed" from="Margin/Scroll/Column/Actions/LoadPoints" to="." method="ask_file" binds=["load"]]
+[connection signal="file_selected" from="File" to="." method="_file_selected"]

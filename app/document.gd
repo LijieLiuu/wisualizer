@@ -54,6 +54,7 @@ const SPIN_TIME := 0.3
 @onready var probe_grab: StaticBody3D = %ProbeGrab
 @onready var probe_tools: VBoxContainer = %ProbeTools
 @onready var probe_readout: Label = %ProbeReadout
+@onready var history: Window = $Model/ProbeHistory
 @onready var speed_group: ButtonGroup = $Model/Options/Bar/Speeds/Speed0.button_group
 
 var inspection := SpatialProbe.new()
@@ -61,6 +62,7 @@ var probing := false
 var _probe_field := -1
 var _options_base_width := 0.0
 
+var source_path := ""
 var meta := Meta.new()
 ## One per model, showing it at the current frame.
 var models: Array[ModelFrames] = []
@@ -95,6 +97,7 @@ var _radius := 1.0
 
 func _ready() -> void:
 	_options_base_width = options.size.x / options.content_scale_factor
+	history.setup(self)
 	inspection.changed.connect(_refresh_inspection)
 	probe_tools.minimum_size_changed.connect(_resize_probe_options)
 	$Model/Options/Bar.minimum_size_changed.connect(_resize_probe_options)
@@ -134,6 +137,7 @@ func open(path: String) -> String:
 	var error := meta.open(path)
 	if not error.is_empty():
 		return error
+	source_path = path
 	frame_count = meta.times.size()
 	field_index = meta.first_field
 	for entry in meta.models:
@@ -207,14 +211,36 @@ func _add_field_picker() -> void:
 		button.toggle_mode = true
 		button.button_group = group
 		button.button_pressed = index == field_index
+		button.set_meta("field_index", index)
 		button.focus_mode = Control.FOCUS_NONE
 		button.custom_minimum_size = Vector2(160, 44)
 		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		button.pressed.connect(func() -> void:
-			field_index = index
-			update_field())
+		button.pressed.connect(select_field.bind(index))
 		bar.add_child(button)
 		bar.move_child(button, %Reset.get_index())
+
+
+func select_field(index: int) -> void:
+	if index < 0 or index >= meta.fields.size():
+		return
+	field_index = index
+	for button in $Model/Options/Bar.get_children():
+		if button.has_meta("field_index"):
+			button.set_pressed_no_signal(button.get_meta("field_index") == index)
+	update_field()
+
+
+func show_probe_history() -> void:
+	history.show()
+	history.refresh()
+	update_field()
+	fit()
+
+
+func hide_probe_history() -> void:
+	history.hide()
+	update_field()
+	fit()
 
 
 func show_notes(shown: bool) -> void:
@@ -236,6 +262,7 @@ func show_resize_hint() -> void:
 
 
 func close() -> void:
+	history.cancel_analysis()
 	inspection.clear()
 	meta.close()
 	queue_free()
@@ -297,7 +324,7 @@ func update_field() -> void:
 		_probe_field = field_index
 		inspection.clear()
 	var current: Meta.Field = meta.fields[field_index]
-	field.visible = debug_button.button_pressed or probing
+	field.visible = debug_button.button_pressed or probing or (history.visible and _probe_axes_supported(current.box.basis))
 	probes.visible = field.visible
 	probes.show_controllers = debug_button.button_pressed
 	probes.shown_field = current
@@ -309,7 +336,7 @@ func update_field() -> void:
 		set_probe_mode(false)
 		return
 	touch.set_brick(meta.read(current.files[frame]), current.cells, 255)
-	if field_changed and probing:
+	if field_changed and (probing or history.visible):
 		fit()
 	_refresh_inspection()
 
@@ -405,7 +432,8 @@ func _refresh_inspection() -> void:
 	if not is_node_ready() or touch == null:
 		return
 	var points: Dictionary = inspection.get_points()
-	probes.inspection_points = points if probing else {}
+	probes.inspection_points = points if probing or (history.visible and not meta.fields.is_empty() and _probe_axes_supported(meta.fields[field_index].box.basis)) else {}
+	history.refresh()
 	if meta.fields.is_empty():
 		probe_readout.text = "This document has no scalar field."
 		return
@@ -539,7 +567,7 @@ func fit() -> void:
 		_radius = maxf(_radius, frames.get_radius(_center))
 	if is_zero_approx(_radius):
 		_radius = maxf(bounds.size.length() * 0.5, 0.001)
-	if probing and not meta.fields.is_empty():
+	if (probing or history.visible) and not meta.fields.is_empty():
 		var box: Transform3D = meta.fields[field_index].box
 		for corner in 8:
 			var point := box * Vector3(corner & 1, (corner >> 1) & 1, (corner >> 2) & 1)
