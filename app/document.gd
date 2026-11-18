@@ -470,9 +470,19 @@ func _refresh_inspection() -> void:
 	var points: Dictionary = inspection.get_points()
 	probes.inspection_points = points if probing or (history.visible and not meta.fields.is_empty() and _probe_axes_supported(meta.fields[field_index].box.basis)) else {}
 	history.refresh()
+	probe_readout.text = format_probe_readings(points)
 	if meta.fields.is_empty():
-		probe_readout.text = "This document has no scalar field."
 		return
+	var state := "Moving %s · release inside the field to pin" % ("A" if inspection.selected_slot == 0 else "B") if inspection.is_active() else "Select A or B, pinch the field box, then move your hand in 3D. Release to pin."
+	probe_readout.text += "\n" + state
+	_resize_probe_options.call_deferred()
+
+
+## One current-frame summary for the volume, history, and hand workbench.
+## Callers choose released pins or a live gesture; formatting never changes them.
+func format_probe_readings(points: Dictionary) -> String:
+	if meta.fields.is_empty():
+		return "This document has no scalar field."
 	var current: Meta.Field = meta.fields[field_index]
 	var rows := PackedStringArray()
 	var values := {}
@@ -482,19 +492,17 @@ func _refresh_inspection() -> void:
 			rows.append("%s: not placed" % name)
 			continue
 		var cell: Vector3i = touch.cell_at_unit(points[slot])
-		var byte: int = touch.byte_of(cell)
-		if byte == 0:
-			rows.append("%s: No data" % name)
+		if cell == touch.NO_CELL:
+			rows.append("%s: No data (current scalar frame unavailable)" % name)
 			continue
-		var value := current.value_of(byte)
-		values[slot] = value
-		rows.append("%s: %s  ·  cell (%d, %d, %d)" % [name, current.format(value), cell.x, cell.y, cell.z])
+		var byte: int = touch.byte_of(cell)
+		if byte > 0:
+			values[slot] = current.value_of(byte)
+		rows.append("%s: %s · cell (%d, %d, %d)" % [name, "No data" if byte == 0 else current.format(values[slot]), cell.x, cell.y, cell.z])
 	var difference := "B − A: place both probes on valid data"
 	if values.has(0) and values.has(1):
 		difference = "B − A: " + current.format(values[1] - values[0])
-	var state := "Moving %s · release inside the field to pin" % ("A" if inspection.selected_slot == 0 else "B") if inspection.is_active() else "Select A or B, pinch the field box, then move your hand in 3D. Release to pin."
-	probe_readout.text = "%s · frame %d · solver time %s\n%s\n%s\n%s" % [current.name, frame + 1, String.num(meta.times[frame], 14), "\n".join(rows), difference, state]
-	_resize_probe_options.call_deferred()
+	return "%s · frame %d / %d · solver time %s\n%s\n%s" % [current.name, frame + 1, frame_count, String.num(meta.times[frame], 14), "\n".join(rows), difference]
 
 
 ## Turns the model as the person pinches and drags it, like Apple's globe:

@@ -44,7 +44,7 @@ def main():
         expected = patch.read_text()
         if current == expected:
             git(checkout, "apply", "--reverse", "--check", str(patch))
-            print(f"Exact hand-tracking API revision 1 patch is already applied to {BASE}.")
+            print(f"Exact hand-tracking API revision 2 patch is already applied to {BASE}.")
             return 0
         if current or git(checkout, "diff", "--cached", "--no-ext-diff", "--name-only", "--", *FILES).stdout:
             raise ValueError("Patch target files have other changes; use a clean checkout of the pinned revision.")
@@ -55,7 +55,7 @@ def main():
         git(checkout, "apply", str(patch))
         if git(checkout, "diff", "--no-ext-diff", "--no-renames", "--binary", "HEAD", "--", *FILES).stdout != expected:
             raise ValueError("Applied diff differs from the expected patch; inspect the checkout before building.")
-        print(f"Applied hand-tracking API revision 1 patch to {BASE}. Rebuild the addon before use.")
+        print(f"Applied hand-tracking API revision 2 patch to {BASE}. Rebuild the addon before use.")
         return 0
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else str(error)

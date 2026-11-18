@@ -1,20 +1,38 @@
 diff --git a/godotrealitykit/GodotRealityKit/GodotRealityKit.h b/godotrealitykit/GodotRealityKit/GodotRealityKit.h
-index 9873660..001be31 100644
+index 9873660..69b3d0d 100644
 --- a/godotrealitykit/GodotRealityKit/GodotRealityKit.h
 +++ b/godotrealitykit/GodotRealityKit/GodotRealityKit.h
-@@ -26,6 +26,8 @@
+@@ -25,7 +25,10 @@
+ #ifdef __cplusplus
  
  #include <array>
++#include <cmath>
  #include <functional>
 +#include <memory>
 +#include <swift/bridging>
  
  namespace gdrk {
  
-@@ -133,10 +135,13 @@ using GDRKColor = UIColor;
+@@ -133,10 +136,29 @@ using GDRKColor = UIColor;
  
  using GDRKColorRef = GDRKColor *;
  
++// BEGIN standalone hand publication freshness
++// Store the source time of joints actually published to XRHandTracker. Receiving a
++// newer ARKit anchor must not extend the lifetime of an older published pose.
++struct GDRKHandTrackingFreshness {
++    double published_timestamp = -1.0;
++
++    void publish(double p_timestamp) { published_timestamp = p_timestamp; }
++    void clear() { published_timestamp = -1.0; }
++    bool is_fresh(double p_now) const {
++        return std::isfinite(published_timestamp) && std::isfinite(p_now) &&
++            published_timestamp >= 0.0 && published_timestamp <= p_now &&
++            p_now - published_timestamp <= 0.25;
++    }
++};
++// END standalone hand publication freshness
++
 +struct GDRKHandTrackingViewState;
 +
  class GDRKBridgeDelegate {
@@ -25,7 +43,7 @@ index 9873660..001be31 100644
  	}
  
  	// A delegate for the volume or portal presenting a Window. SwiftUI can still
-@@ -144,6 +149,7 @@ public:
+@@ -144,6 +166,7 @@ public:
  	GDRKBridgeDelegate(gdrk::SceneLoader *p_loader, uint64_t p_window_id) {
  		loader = p_loader;
  		window_id = p_window_id;
@@ -33,7 +51,7 @@ index 9873660..001be31 100644
  	}
  
  	void printError(const char *p_msg);
-@@ -171,7 +177,7 @@ public:
+@@ -171,7 +194,7 @@ public:
  	UIColor *getBootSplashBgColor() const;
  #endif
  
@@ -42,7 +60,7 @@ index 9873660..001be31 100644
  
  	void onWorldScaleChanged(float p_scale) const;
  
-@@ -211,9 +217,15 @@ public:
+@@ -211,13 +234,23 @@ public:
  	// which visionOS lets ARKit track hands.
  	bool wantsHandTracking() const;
  
@@ -59,7 +77,15 @@ index 9873660..001be31 100644
  
  	// Mark whether a hand is tracked, once its joints for this frame are published.
  	void setHandTracked(ControllerHand p_hand, bool p_tracked) const;
-@@ -244,6 +256,8 @@ public:
+ 
++	// Source timestamp of the joints just published, in CACurrentMediaTime seconds.
++	void setHandSampleTimestamp(ControllerHand p_hand, double p_timestamp) const;
++	bool isHandSampleFresh(ControllerHand p_hand) const;
++
+ 	// Sample a spatial controller's buttons / thumbstick and publish them on the shared-volume
+ 	// controller XR interface. p_gc_controller is the GCController as an opaque pointer. Ignored
+ 	// when that interface isn't running.
+@@ -244,6 +277,8 @@ public:
  private:
  	mutable gdrk::SceneLoader *loader = nullptr;
  	uint64_t window_id = 0;
@@ -102,7 +128,7 @@ index ee27bf4..5ee85a4 100644
  	godot::Window *window = godot::Object::cast_to<godot::Window>(godot::ObjectDB::get_instance(found->second.window));
  	if (RealityVolumeCamera3D *camera = godot::Object::cast_to<RealityVolumeCamera3D>(find_window_camera(window))) {
 diff --git a/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift b/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift
-index fb3dd8b..567beca 100644
+index fb3dd8b..56fc55d 100644
 --- a/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift
 +++ b/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift
 @@ -9,19 +9,45 @@
@@ -153,7 +179,7 @@ index fb3dd8b..567beca 100644
  
      /// ARKit's joints, each with the XRHandTracker.HandJoint it stands for. ARKit has no palm
      /// joint: the palm is taken halfway along the middle finger's metacarpal.
-@@ -39,55 +65,195 @@ final class HandAnchors {
+@@ -39,55 +65,194 @@ final class HandAnchors {
      ]
      private static let palm: Int32 = 0
  
@@ -226,14 +252,12 @@ index fb3dd8b..567beca 100644
 +            invalidate()
 +            return
 +        }
-+        if let left, !handTrackingTimestampIsFresh(left.timestamp, now: now) {
-+            self.left = nil
-+            delegate?.setHandTracked(.leftHand, false)
-+        }
-+        if let right, !handTrackingTimestampIsFresh(right.timestamp, now: now) {
-+            self.right = nil
-+            delegate?.setHandTracked(.rightHand, false)
-+        }
++        if let left, !handTrackingTimestampIsFresh(left.timestamp, now: now) { self.left = nil }
++        if let right, !handTrackingTimestampIsFresh(right.timestamp, now: now) { self.right = nil }
++        // New anchors may arrive without a scene callback publishing them. Expire the
++        // actual tracker publication, independently from those newer cached anchors.
++        if delegate?.isHandSampleFresh(.leftHand) != true { delegate?.setHandTracked(.leftHand, false) }
++        if delegate?.isHandSampleFresh(.rightHand) != true { delegate?.setHandTracked(.rightHand, false) }
 +    }
 +
 +    private func fail() {
@@ -270,6 +294,7 @@ index fb3dd8b..567beca 100644
 +        // ARKit has no palm joint. This derived pose is valid when its inputs are tracked,
 +        // but must not advertise itself as a directly tracked joint.
 +        delegate.setHandJoint(hand, Self.palm, palmValid ? Self.transform(palm) : Self.transform(matrix_identity_float4x4), palmValid, false)
++        delegate.setHandSampleTimestamp(hand, sample.timestamp)
          delegate.setHandTracked(hand, true)
      }
  
@@ -397,7 +422,7 @@ index dd00f0b..07b9dc3 100644
  
      private func onSceneUpdate(event: SceneEvents.Update) {
 diff --git a/godotrealitykit/GodotRealityKit/extension.mm b/godotrealitykit/GodotRealityKit/extension.mm
-index c321aeb..0427a99 100644
+index c321aeb..b26d675 100644
 --- a/godotrealitykit/GodotRealityKit/extension.mm
 +++ b/godotrealitykit/GodotRealityKit/extension.mm
 @@ -12,6 +12,7 @@
@@ -416,10 +441,12 @@ index c321aeb..0427a99 100644
  #include <godot_cpp/classes/window.hpp>
  #include <godot_cpp/classes/xr_origin3d.hpp>
  #include <godot_cpp/classes/xr_hand_tracker.hpp>
-@@ -50,8 +52,39 @@
+@@ -49,9 +51,56 @@
+ 
  #import <Foundation/Foundation.h>
  #import <GameController/GameController.h>
- 
++#import <QuartzCore/QuartzCore.h>
++
 +// Main-thread state shared by the native host and Swift copies of its bridge. A weak
 +// map does not extend a closed view's lifetime, and replacement at the same Window ID
 +// cannot let a deferred callback claim or invalidate the replacement's trackers.
@@ -427,10 +454,18 @@ index c321aeb..0427a99 100644
 +    uint64_t window_id;
 +    bool presented = false;
 +    bool closed = false;
++    std::array<GDRKHandTrackingFreshness, 2> samples;
 +};
 +static std::unordered_map<uint64_t, std::weak_ptr<GDRKHandTrackingViewState>> hand_views;
 +static std::weak_ptr<GDRKHandTrackingViewState> hand_owner;
 +
++static bool hand_sample_is_fresh(const std::shared_ptr<GDRKHandTrackingViewState> &p_view, int p_hand) {
++    if (!p_view || p_view->closed || !p_view->presented || hand_owner.lock() != p_view) { return false; }
++    auto found = hand_views.find(p_view->window_id);
++    if (found == hand_views.end() || found->second.lock() != p_view) { return false; }
++    return p_view->samples[p_hand].is_fresh(CACurrentMediaTime());
++}
+ 
  namespace gdrk {
  
 +// An explicit capability check for consumers requiring lifecycle-safe skeletal data.
@@ -441,9 +476,16 @@ index c321aeb..0427a99 100644
 +    static void _bind_methods() {
 +        godot::ClassDB::bind_method(godot::D_METHOD("get_api_revision"), &RealityKitHandTracking::get_api_revision);
 +        godot::ClassDB::bind_method(godot::D_METHOD("is_immersive_presented", "window_id"), &RealityKitHandTracking::is_immersive_presented);
++        godot::ClassDB::bind_method(godot::D_METHOD("is_hand_sample_fresh", "window_id", "hand"), &RealityKitHandTracking::is_hand_sample_fresh);
 +    }
 +public:
-+    int get_api_revision() const { return 1; }
++    int get_api_revision() const { return 2; }
++    // Read-only point-of-use guard. Hand 0 is left, hand 1 is right.
++    bool is_hand_sample_fresh(int64_t p_window_id, int64_t p_hand) const {
++        if (p_window_id < 0 || p_hand < 0 || p_hand > 1) { return false; }
++        auto found = hand_views.find(uint64_t(p_window_id));
++        return found != hand_views.end() && hand_sample_is_fresh(found->second.lock(), int(p_hand));
++    }
 +    bool is_immersive_presented(int64_t p_window_id) const {
 +        if (p_window_id < 0) { return false; }
 +        auto found = hand_views.find(uint64_t(p_window_id));
@@ -456,7 +498,7 @@ index c321aeb..0427a99 100644
  void install_renderer_relaunch_guard();
  
  void initialize_gdrk_module(godot::ModuleInitializationLevel p_level) {
-@@ -85,6 +118,7 @@ void initialize_gdrk_module(godot::ModuleInitializationLevel p_level) {
+@@ -85,6 +134,7 @@ void initialize_gdrk_module(godot::ModuleInitializationLevel p_level) {
  		GDREGISTER_CLASS(RealityKitDirectionalLightShadow3D);
  		GDREGISTER_CLASS(InputEventSpatialTouch);
  		GDREGISTER_CLASS(InputEventSpatialDrag);
@@ -464,7 +506,7 @@ index c321aeb..0427a99 100644
  
  #if TESTING_ENABLED
  		godot::print_line("Testing enabled: Registering GodotXCTestNode");
-@@ -712,6 +746,47 @@ void GDRKBridgeDelegate::setControllerAim(ControllerHand p_hand, GDRKTransform p
+@@ -712,6 +762,47 @@ void GDRKBridgeDelegate::setControllerAim(ControllerHand p_hand, GDRKTransform p
  	});
  }
  
@@ -512,7 +554,7 @@ index c321aeb..0427a99 100644
  bool GDRKBridgeDelegate::wantsHandTracking() const {
  	static const bool enabled = godot::ProjectSettings::get_singleton()->get_setting("xr/visionos/enable_hand_tracking", false);
  	if (!enabled) {
-@@ -734,33 +809,56 @@ static godot::XRHandTracker *hand_tracker(ControllerHand p_hand) {
+@@ -734,33 +825,66 @@ static godot::XRHandTracker *hand_tracker(ControllerHand p_hand) {
  		made->set_tracker_name(p_hand == kLeftHand ? "/user/hand_tracker/left" : "/user/hand_tracker/right");
  		made->set_tracker_hand(tracker_hand(p_hand));
  		made->set_hand_tracking_source(godot::XRHandTracker::HAND_TRACKING_SOURCE_UNOBSTRUCTED);
@@ -567,6 +609,15 @@ index c321aeb..0427a99 100644
 +            tracker->invalidate_pose("default");
 +        }
 +    }
++}
++
++void GDRKBridgeDelegate::setHandSampleTimestamp(ControllerHand p_hand, double p_timestamp) const {
++    if (!hand_view || hand_owner.lock() != hand_view) { return; }
++    hand_view->samples[p_hand == kLeftHand ? 0 : 1].publish(p_timestamp);
++}
++
++bool GDRKBridgeDelegate::isHandSampleFresh(ControllerHand p_hand) const {
++    return hand_sample_is_fresh(hand_view, p_hand == kLeftHand ? 0 : 1);
  }
  
  void GDRKBridgeDelegate::setHandTracked(ControllerHand p_hand, bool p_tracked) const {
@@ -579,6 +630,7 @@ index c321aeb..0427a99 100644
 +    godot::XRHandTracker *tracker = hand_tracker(p_hand);
 +    tracker->set_has_tracking_data(p_tracked);
 +    if (!p_tracked) {
++        hand_view->samples[p_hand == kLeftHand ? 0 : 1].clear();
 +        for (int joint = 0; joint < godot::XRHandTracker::HAND_JOINT_MAX; joint++) {
 +            tracker->set_hand_joint_flags(godot::XRHandTracker::HandJoint(joint), 0);
 +        }

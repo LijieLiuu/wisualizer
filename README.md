@@ -74,8 +74,9 @@ With the [supported patched build](docs/hand-tracking.md), open **Options →
 Track fingers…** to enter a mixed immersive space. Select either hand and a
 fingertip, then move it inside the field box for a continuous scalar reading.
 Both tracked skeletons are shown. Use the other hand to choose **Pin A** or
-**Pin B**; **History and export…** opens the existing inspector. Moving a finger
-does not change committed points until you explicitly pin it.
+**Pin B**. The controls show the pinned cells' current values and their
+difference (**B − A**) as you move your finger or step through frames.
+Choose **History and export…** for the full time series.
 
 The controls resize and rotate the field, move it near the tracked fingertip,
 and step or play frames. **Return to windows** closes hand inspection and
@@ -209,7 +210,7 @@ for test in zip_files zip_packaging scalar_validation scalar_import field_analys
   "$WISUALIZER_GODOT" --headless --path . --script "res://tests/${test}_test.gd"
 done
 "$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_workspace_test.gd -- --godot-dialogs
-python3 -m unittest discover -s tests -p test_hand_tracking_patch.py -v
+python3 -m unittest discover -s tests -p 'test_hand_tracking_*.py' -v
 ```
 
 Checks cover ZIP round trips and failed writes, malformed scalar data, import
@@ -228,4 +229,5 @@ Hand tests use synthetic `XRHandTracker` fixtures to cover per-joint validity,
 loss/recovery, transforms, physical scaling, live sampling, explicit pin commits,
 history preservation, isolated documents, cleanup and control layouts. Native
 patch installer tests cover exact revisions, reapplication and preservation of
-staged or unstaged user changes. These checks do not replace a headset test.
+staged or unstaged user changes. The freshness regression uses a host C++
+compiler to exercise the 250 ms age limit on published hand poses.

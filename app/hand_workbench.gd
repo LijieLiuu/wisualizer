@@ -21,6 +21,7 @@ static var _active: WeakRef
 @onready var field: Node3D = $Immersive/Content/Field
 @onready var skeleton: Node3D = $Immersive/Skeleton
 @onready var readout: Label = %Reading
+@onready var pinned_readout: Label = %PinnedReading
 @onready var status: Label = %Status
 
 var document: Node
@@ -32,6 +33,8 @@ var _models: Array[Node3D] = []
 var _pins: Array[MeshInstance3D] = []
 var _frame := -1
 var _field := -1
+var _pinned_brick_revision := -1
+var _displayed_points: Dictionary = {}
 var _placement := DEFAULT_PLACEMENT
 var _rotation := 0.0
 var _presented := false
@@ -56,8 +59,9 @@ static func availability() -> String:
 	if not ClassDB.class_exists(&"RealityKitHandTracking"):
 		return "The hand-tracking addon needs the compatibility patch documented in the README."
 	var api: Object = ClassDB.instantiate(&"RealityKitHandTracking")
-	if api == null or not api.has_method("get_api_revision") or api.call("get_api_revision") != 1 or not api.has_method("is_immersive_presented"):
-		return "The hand-tracking addon is incompatible with this build."
+	if api == null or not api.has_method("get_api_revision") or api.call("get_api_revision") != 2 \
+			or not api.has_method("is_immersive_presented") or not api.has_method("is_hand_sample_fresh"):
+		return "The hand-tracking addon needs API revision 2. Rebuild it with the patch documented in docs/hand-tracking.md."
 	return ""
 
 
@@ -140,6 +144,7 @@ func _process(delta: float) -> void:
 
 func _sync_document() -> void:
 	if document == null or document.meta.fields.is_empty():
+		pinned_readout.text = "This document has no scalar field."
 		_clear_live("No scalar field is available.")
 		return
 	var changed: bool = _field != document.field_index
@@ -158,6 +163,12 @@ func _sync_document() -> void:
 		_models[index].visible = document.models[index].visible
 	%Playback.text = "Pause" if document.playing else "Play"
 	var points: Dictionary = document.inspection.get_committed_points()
+	# This stays visible through live tracking loss and follows changes made in
+	# the history inspector as well as hand pinning. It never uses a live tip.
+	if document.touch.revision != _pinned_brick_revision or points != _displayed_points:
+		pinned_readout.text = document.format_probe_readings(points)
+		_pinned_brick_revision = document.touch.revision
+		_displayed_points = points
 	for slot in 2:
 		_pins[slot].visible = _field_supported and points.has(slot) and immersive.visible and _presented and not _suspended
 		if _pins[slot].visible:
@@ -165,6 +176,10 @@ func _sync_document() -> void:
 
 
 func _snapshot(hand: String) -> Dictionary:
+	# XRHandTracker flags can outlive their source sample between watchdog ticks.
+	var side := 0 if hand == "left" else 1
+	if not _native_api.call("is_hand_sample_fresh", immersive.get_window_id(), side):
+		return {tracked = false, joints = {}, reason = "Waiting for a fresh hand sample."}
 	return Sample.sample(XRServer.get_tracker(TRACKERS[hand]) as XRHandTracker, origin.global_transform, XRServer.world_scale)
 
 
@@ -202,7 +217,7 @@ func _update_tracking() -> void:
 		else:
 			var byte: int = document.touch.byte_of(cell)
 			line = "%s · cell (%d, %d, %d)" % ["No data in this cell" if byte == 0 else entry.format(entry.value_of(byte)), cell.x, cell.y, cell.z]
-	readout.text = "%s\n%s · frame %d / %d · solver time %s\n%s" % [counts, entry.name, document.frame + 1, document.frame_count, str(document.meta.times[document.frame]), line]
+	readout.text = "%s\n%s" % [counts, line]
 	%PinA.disabled = not live_sample.valid
 	%PinB.disabled = not live_sample.valid
 	%NearHand.disabled = not _field_supported or not hands[selected_hand].joints.has(selected_joint)
@@ -259,7 +274,6 @@ func pin(slot: int) -> void:
 	var points: Dictionary = document.inspection.get_committed_points()
 	points[slot] = live_sample.unit
 	document.inspection.set_points(points)
-	status.text = "Pinned %s. Its location is available in Inspect for history and export." % ("A" if slot == 0 else "B")
 	_sync_document()
 
 

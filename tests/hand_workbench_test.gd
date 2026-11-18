@@ -8,6 +8,14 @@ const INDEX := XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP
 const THUMB := XRHandTracker.HAND_JOINT_THUMB_TIP
 const FLAGS := XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID | XRHandTracker.HAND_JOINT_FLAG_POSITION_TRACKED
 
+class PublishedHands extends RefCounted:
+	var fresh := [true, true]
+	var queried_window := -1
+
+	func is_hand_sample_fresh(window_id: int, hand: int) -> bool:
+		queried_window = window_id
+		return fresh[hand]
+
 class Fixture extends "res://app/hand_workbench.gd":
 	var presentation_ready := true
 	func _runtime_problem() -> String:
@@ -115,6 +123,7 @@ func _document(path: String) -> Node:
 func _bench(document: Node) -> Node:
 	var bench := Workbench.instantiate()
 	bench.set_script(Fixture)
+	bench._native_api = PublishedHands.new()
 	document.add_child(bench)
 	bench.set_process(false)
 	return bench
@@ -226,19 +235,37 @@ func _run() -> void:
 	_check(bench.live_sample.valid and bench.live_sample.unit.is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Fresh fingertip maps through the workbench field inverse exactly once")
 	_check(bench.readout.text.contains("0.0 Pa") and bench.readout.text.contains("cell (2, 0, 0)"), "Live scalar readout preserves physical zero and its cell")
 	_check(document.inspection.get_committed_points().is_empty() and second.inspection.get_committed_points().is_empty(), "Continuous readings do not mutate either document's committed pins")
+	_check(bench.pinned_readout.text.contains("A: not placed") and bench.pinned_readout.text.contains("B: not placed"), "Live tip cannot appear in the separate committed readout before pinning")
 	bench.get_node("%PinA").pressed.emit()
 	_check(document.inspection.get_committed_points()[0].is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Explicit Pin A stores normalized field coordinates")
+	_check(bench.pinned_readout.text.contains("A: 0.0 Pa · cell (2, 0, 0)") and bench.pinned_readout.text.contains("B: not placed"), "Pinning immediately shows committed physical zero and its cell")
+	var pinned_a_text: String = bench.pinned_readout.text
 	document.history.analyze()
 	await _wait_history(document.history)
 	_check(not document.history.result.is_empty(), "Committed fingertip drives the real history analyzer")
 	var analyzed: Dictionary = document.history.result.duplicate(true)
+	_test_stale_publication(bench, document)
 	_put(bench, "left", INDEX, Vector3(0.875, 0.5, 0.5))
 	_tick(bench)
 	_check(document.history.result == analyzed and document.inspection.get_committed_points().size() == 1, "Moving live fingertip preserves analyzed history and committed A")
+	for tick in 4:
+		_tick(bench)
+	_check(bench.pinned_readout.text == pinned_a_text and bench.readout.text.contains("2.0 Pa"), "Committed A remains readable across frames while the live fingertip reports a different value")
 	_put(bench, "left", INDEX, Vector3(0.375, 0.5, 0.5))
 	bench.get_node("%PinB").pressed.emit()
 	_check(document.inspection.get_committed_points()[1].is_equal_approx(Vector3(0.375, 0.5, 0.5)) and document.history.result.is_empty(), "Pin B resamples current tracker rather than stale live pose, then invalidates old history")
 	_check(second.inspection.get_committed_points().is_empty(), "Pinning in the first document leaves the second untouched")
+	_check(bench.pinned_readout.text.contains("B: -2.0 Pa · cell (1, 0, 0)") and bench.pinned_readout.text.contains("B − A: -2.0 Pa"), "Committed B and signed B minus A appear immediately")
+	_check(bench.pinned_readout.text == document.history.readout.text and document.probe_readout.text.begins_with(bench.pinned_readout.text), "Workbench, inspector, and volume share the same current-frame reading format")
+	var placed_points: Dictionary = document.inspection.get_committed_points()
+	document.inspection.set_points({0: placed_points[0], 1: placed_points[0]})
+	_tick(bench)
+	_check(bench.pinned_readout.text.contains("A: 0.0 Pa") and bench.pinned_readout.text.contains("B: 0.0 Pa") and bench.pinned_readout.text.contains("B − A: 0.0 Pa"), "Externally replaced coincident pins remain individually identified with a real zero difference")
+	document.clear_probes()
+	_tick(bench)
+	_check(bench.pinned_readout.text.contains("A: not placed") and bench.pinned_readout.text.contains("B: not placed") and not bench.pinned_readout.text.contains("B − A: 0.0 Pa"), "External clear removes committed readings and the previous numeric difference")
+	document.inspection.set_points(placed_points)
+	_tick(bench)
 
 	bench.select_hand(1)
 	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled, "Hand selection clears the previous live candidate immediately")
@@ -251,6 +278,7 @@ func _run() -> void:
 	_trackers.right.set_hand_joint_flags(THUMB, XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID)
 	_tick(bench)
 	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled and not bench.skeleton._joints.right[THUMB].visible, "An untracked selected joint clears its sample and skeleton marker")
+	_check(bench.pinned_readout.text.contains("A: 0.0 Pa") and bench.pinned_readout.text.contains("B − A: -2.0 Pa"), "Tracking loss clears the live sample while retaining current readings at committed locations")
 	var preserved: Dictionary = document.inspection.get_committed_points()
 	bench.pin(0)
 	_check(document.inspection.get_committed_points() == preserved, "A pin attempt after tracking loss cannot commit a stale point")
@@ -320,19 +348,24 @@ func _run() -> void:
 	_tick(bench)
 	_check(document.frame == 1 and bench._frame == 1 and bench.readout.text.contains("No data in this cell"), "Frame changes refresh the selected cell and preserve explicit missing bytes")
 	_check(document.inspection.get_committed_points() == preserved, "Frame playback leaves committed field locations unchanged")
+	_check(bench.pinned_readout.text.contains("frame 2 / 4") and bench.pinned_readout.text.contains("A: No data · cell (2, 0, 0)") and bench.pinned_readout.text.contains("B: 0.0 Pa") and bench.pinned_readout.text.contains("B − A: place both probes on valid data"), "New frame updates committed cells and clears the numeric difference when a cell is missing")
 	document.touch.set_brick(PackedByteArray(), Vector3i.ZERO, 255)
 	_tick(bench)
 	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled and bench.readout.text.contains("unavailable"), "Unavailable scalar payload disables pinning instead of retaining a stale value")
+	_check(bench.pinned_readout.text.contains("A: No data (current scalar frame unavailable)") and bench.pinned_readout.text.contains("B: No data (current scalar frame unavailable)") and not bench.pinned_readout.text.contains("B: 0.0 Pa"), "Unavailable payload clears both committed values instead of retaining the preceding frame")
 	document.update_field()
 	bench.select_field(1)
 	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
 	_tick(bench)
 	_check(bench.live_sample.valid and bench.readout.text.contains("30.0 K") and bench._field == 1, "Distant anisotropic second field refits and uses its own scalar metadata")
 	_check(document.inspection.get_committed_points().is_empty() and second.field_index == 0, "Field switching clears only the owning document's old-field pins")
+	_check(bench.pinned_readout.text.contains("Temperature") and bench.pinned_readout.text.contains("A: not placed") and bench.pinned_readout.text.contains("B: not placed") and not bench.pinned_readout.text.contains("Pa"), "Field switch replaces metadata and clears readings from the old field")
 	bench.pin(0)
+	_check(bench.pinned_readout.text.contains("A: 30.0 K · cell (2, 0, 0)"), "Pinning the new field uses its own units and numerical range")
 	var final_pins: Dictionary = document.inspection.get_committed_points()
 	bench._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled, "Application suspension immediately clears live input")
+	_check(bench.pinned_readout.text.contains("A: 30.0 K"), "Suspension retains committed field readings separately from unavailable live hands")
 	bench.pin(1)
 	_check(document.inspection.get_committed_points() == final_pins, "Suspended workbench cannot commit new pins")
 	bench._notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
@@ -355,6 +388,29 @@ func _run() -> void:
 	_cleanup()
 	print("hand_workbench_test: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
+
+
+func _test_stale_publication(bench: Node, document: Node) -> void:
+	var published: PublishedHands = bench._native_api
+	var pins: Dictionary = document.inspection.get_committed_points()
+	var placement: Vector3 = bench._placement
+	# Simulate crossing the age limit between a valid UI frame and the click.
+	published.fresh[0] = false
+	bench.get_node("%PinB").pressed.emit()
+	_check(published.queried_window == bench.immersive.get_window_id(), "Freshness is requested for the workbench's own window")
+	_check(_trackers.left.has_tracking_data and _trackers.left.get_hand_joint_flags(INDEX) == FLAGS, "Expired left pose still has readable XR tracker flags in this fixture")
+	_check(document.inspection.get_committed_points() == pins and not document.history.result.is_empty(), "A click between expiry and native cleanup preserves existing pins and history")
+	_check(not bench.live_sample.valid and not bench.skeleton._joints.left[INDEX].visible and bench.skeleton._joints.right[INDEX].visible, "Only the expired hand disappears")
+	bench.place_near_hand()
+	_check(bench._placement == placement and bench.get_node("%NearHand").disabled, "An expired fingertip cannot move the field")
+	bench.select_hand(1)
+	_tick(bench)
+	_check(bench.live_sample.valid and bench.live_sample.unit.is_equal_approx(Vector3(0.875, 0.5, 0.5)), "The other hand can still sample the field")
+	published.fresh = [true, false]
+	bench.select_hand(0)
+	_tick(bench)
+	_check(bench.live_sample.valid and not bench.hands.right.tracked, "Newly published left data recovers while expired right data stays hidden")
+	published.fresh[1] = true
 
 
 func _test_presentation(document: Node, second: Node) -> void:

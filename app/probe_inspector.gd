@@ -98,20 +98,7 @@ func refresh() -> void:
 		%CellX.max_value = entry.cells.x - 1
 		%CellY.max_value = entry.cells.y - 1
 		%CellZ.max_value = entry.cells.z - 1
-		var rows := PackedStringArray()
-		var values := {}
-		for slot in [0, 1]:
-			var label := "A" if slot == 0 else "B"
-			if not _points.has(slot):
-				rows.append(label + ": not placed")
-				continue
-			var cell: Vector3i = Vector3i((_points[slot] * Vector3(entry.cells)).floor())
-			var byte: int = document.touch.byte_of(cell)
-			if byte > 0:
-				values[slot] = entry.value_of(byte)
-			rows.append("%s: %s · cell (%d, %d, %d)" % [label, "No data" if byte == 0 else entry.format(entry.value_of(byte)), cell.x, cell.y, cell.z])
-		rows.append("B − A: " + (entry.format(values[1] - values[0]) if values.has(0) and values.has(1) else "place both probes on valid data"))
-		readout.text = "%s · frame %d / %d · solver time %s\n%s" % [entry.name, document.frame + 1, document.frame_count, str(document.meta.times[document.frame]), "\n".join(rows)]
+		readout.text = document.format_probe_readings(_points)
 		if active:
 			readout.text += "\nPlacement in progress; history uses released pins."
 	else:

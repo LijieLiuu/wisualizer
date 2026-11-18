@@ -122,6 +122,17 @@ custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 text = "History and export…"
 
+[node name="PinnedHeading" type="Label" parent="Panel/Margin/Scroll/Column"]
+layout_mode = 2
+autowrap_mode = 3
+text = "Pinned locations"
+
+[node name="PinnedReading" type="Label" parent="Panel/Margin/Scroll/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "A: not placed\nB: not placed"
+
 [node name="PlaybackRow" type="HFlowContainer" parent="Panel/Margin/Scroll/Column"]
 layout_mode = 2
 theme_override_constants/h_separation = 12

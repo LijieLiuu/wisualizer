@@ -12,10 +12,11 @@ The continuous hand API was verified against these exact upstream revisions:
 
 Apply this repository's [native patch](../patches/godotrealitykit-hand-tracking.patch)
 **before building the plugin**. The application requires its
-`RealityKitHandTracking.get_api_revision() == 1` capability marker and the pinned
-engine hash. An older addon, or the unpatched upstream addon, leaves **Track
-fingers…** disabled with an explanation. The marker is only a compatibility
-check; actual hand data still comes from Godot's standard `XRHandTracker` API.
+`RealityKitHandTracking.get_api_revision() == 2` capability marker and the pinned
+engine hash. To upgrade from revision 1, apply the current patch in a fresh
+checkout of the pinned plugin and rebuild the addon using the steps below.
+Older addons leave **Track fingers…** disabled. Joint positions come from
+Godot's standard `XRHandTracker` API.
 
 Use a separate plugin checkout so an existing toolchain remains available:
 
@@ -71,8 +72,10 @@ and manual cell selection can be used in the shared windows.
 - Move that fingertip inside the field box to read the current cell's scalar
   value. Missing cells show **No data**; a valid physical zero remains a value.
 - Use the other hand to choose **Pin A** or **Pin B**. Each click reads the current
-  joint again. Merely moving a finger does not change committed locations or
-  invalidate an existing history analysis.
+  joint again. The controls show each pinned location's cell and scalar value,
+  and **B − A** when both cells have data. Stepping through frames updates
+  these readings at the saved locations. You can still compare them after
+  moving your fingertip or losing hand tracking.
 - **History and export…** opens the existing inspector for frame histories, CSV
   export and saved probe positions. Playback controls inspect the same field
   locations in other frames.
@@ -116,9 +119,13 @@ use independent frame readers rather than reparenting a live shared-volume model
 ## Tracking loss and validation
 
 The native patch consumes `anchorUpdates` and caches each hand independently.
-It preserves per-joint `isTracked`, rejects nonfinite poses, expires samples
-older than 0.25 seconds using the ARKit update timestamp, and also checks
-freshness when scene updates stop. Each native view has its own ownership
+It preserves per-joint `isTracked` and rejects nonfinite poses. Before reading
+a hand, the workbench calls `is_hand_sample_fresh(window_id, hand)` (0 for
+left, 1 for right). This checks the active view and the ARKit source time
+of the pose published to that hand's Godot tracker. A sample older than
+0.25 seconds is unavailable even if ARKit has delivered a newer anchor that
+the renderer has yet to publish. The same check protects Pin A, Pin B and
+Move near fingertip between periodic cleanup ticks. Each native view has its own ownership
 identity, so delayed cleanup or updates from an old view cannot alter a new
 view's global trackers. Hosts rejected before presentation are also cleaned up.
 Loss, provider failure, permission denial, suspension and window closure clear
