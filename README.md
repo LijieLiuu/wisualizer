@@ -22,6 +22,9 @@ Open the project in that editor and press F5 for the desktop view, or export
 with the `visionOS` preset and run the generated Xcode project on Apple Vision
 Pro or the visionOS Simulator (set your signing team in Xcode).
 
+For continuous finger tracking, use the exact revisions and native patch in
+[the hand-tracking build instructions](docs/hand-tracking.md).
+
 ## Use
 
 The first window is the library. **Open…** opens a ZIP, after asking whether
@@ -58,12 +61,29 @@ This feature consumes GodotRealityKit's `InputEventSpatialTouch` and
 `InputEventSpatialDrag` input-device positions during a system gesture. It does
 not provide continuous finger-joint tracking. Use the matching custom engine and
 a recent `arvr4mp` plugin with pose flags and canceled-touch delivery; the event
-contract was checked against plugin revision `922fc2c`. Probe controls appear on
+contract was checked against plugin revision `fbfdaaed`. Probe controls appear on
 visionOS and require these event classes. If a gesture has no valid pose, it
 cannot place a sample. Fields with sheared axes disable Probe with an explanatory
 tooltip because the current native renderer cannot preserve that transform.
 Rotated fields and nonuniform axis scales remain supported. Hand movement and usability still need testing on a
 physical Vision Pro; desktop tests do not verify that behavior.
+
+### Continuous finger tracking on Vision Pro
+
+With the [supported patched build](docs/hand-tracking.md), open **Options →
+Track fingers…** to enter a mixed immersive space. Select either hand and a
+fingertip, then move it inside the field box for a continuous scalar reading.
+Both tracked skeletons are shown. Use the other hand to choose **Pin A** or
+**Pin B**; **History and export…** opens the existing inspector. Moving a finger
+does not change committed points until you explicitly pin it.
+
+The controls resize and rotate the field, move it near the tracked fingertip,
+and step or play frames. **Return to windows** closes hand inspection and
+preserves committed locations. Only one document can use the immersive space
+at a time. Tracking requires visionOS permission and a Full Space; unavailable
+or lost joints are hidden and cannot place a sample. See the [API, permission
+and validation details](docs/hand-tracking.md). Physical Vision Pro interaction
+still requires device testing.
 
 ### Probe history and saved positions
 
@@ -155,8 +175,9 @@ their `currentColor` takes the notes' text color.
 
 `[url=frame:9]frame 9[/url]` is a link that pauses on frame 9.
 
-Shared scenes use `Window` and `SpatialVolume3D` only; platform differences stay
-inside `addons/spatial/`. On desktop, a window's ornaments are drawn inside it.
+Shared-volume scenes use `Window` and `SpatialVolume3D`; platform differences
+stay inside `addons/spatial/`. Hand inspection has its own immersive `Window`
+with an XR origin and camera. On desktop, a window's ornaments are drawn inside it.
 Alerts and file pickers are the system's where the platform has them; run with
 `-- --godot-dialogs` to try Godot's own, which other platforms get.
 
@@ -184,10 +205,11 @@ Use the custom Godot editor described above and import project resources first.
 Fixtures run in temporary directories, outside the library:
 
 ```sh
-for test in zip_files zip_packaging scalar_validation scalar_import field_analysis spatial_probe field_probes probe_document probe_history probe_timeline probe_history_document; do
+for test in zip_files zip_packaging scalar_validation scalar_import field_analysis spatial_probe field_probes probe_document probe_history probe_timeline probe_history_document hand_tracking_sample hand_skeleton_view hand_workbench; do
   "$WISUALIZER_GODOT" --headless --path . --script "res://tests/${test}_test.gd"
 done
 "$WISUALIZER_GODOT" --headless --path . --script res://tests/zip_workspace_test.gd -- --godot-dialogs
+python3 -m unittest discover -s tests -p test_hand_tracking_patch.py -v
 ```
 
 Checks cover ZIP round trips and failed writes, malformed scalar data, import
@@ -201,3 +223,9 @@ History tests cover independent A/B numerical fixtures, missing versus zero,
 source changes, session validation, transactional exports, cancellation, document
 isolation and timeline selection. Chart tests cover gaps, dense data, edge ranges,
 resizing and cursor updates without rebuilding the full history.
+
+Hand tests use synthetic `XRHandTracker` fixtures to cover per-joint validity,
+loss/recovery, transforms, physical scaling, live sampling, explicit pin commits,
+history preservation, isolated documents, cleanup and control layouts. Native
+patch installer tests cover exact revisions, reapplication and preservation of
+staged or unstaged user changes. These checks do not replace a headset test.

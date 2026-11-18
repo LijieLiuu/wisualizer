@@ -1,0 +1,589 @@
+diff --git a/godotrealitykit/GodotRealityKit/GodotRealityKit.h b/godotrealitykit/GodotRealityKit/GodotRealityKit.h
+index 9873660..001be31 100644
+--- a/godotrealitykit/GodotRealityKit/GodotRealityKit.h
++++ b/godotrealitykit/GodotRealityKit/GodotRealityKit.h
+@@ -26,6 +26,8 @@
+ 
+ #include <array>
+ #include <functional>
++#include <memory>
++#include <swift/bridging>
+ 
+ namespace gdrk {
+ 
+@@ -133,10 +135,13 @@ using GDRKColor = UIColor;
+ 
+ using GDRKColorRef = GDRKColor *;
+ 
++struct GDRKHandTrackingViewState;
++
+ class GDRKBridgeDelegate {
+ public:
+ 	explicit GDRKBridgeDelegate(gdrk::SceneLoader *p_loader) {
+ 		loader = p_loader;
++		hand_view = make_hand_view(0);
+ 	}
+ 
+ 	// A delegate for the volume or portal presenting a Window. SwiftUI can still
+@@ -144,6 +149,7 @@ public:
+ 	GDRKBridgeDelegate(gdrk::SceneLoader *p_loader, uint64_t p_window_id) {
+ 		loader = p_loader;
+ 		window_id = p_window_id;
++		hand_view = make_hand_view(p_window_id);
+ 	}
+ 
+ 	void printError(const char *p_msg);
+@@ -171,7 +177,7 @@ public:
+ 	UIColor *getBootSplashBgColor() const;
+ #endif
+ 
+-	void *getCameraEntity() const;
++	void *getCameraEntity() const SWIFT_RETURNS_INDEPENDENT_VALUE;
+ 
+ 	void onWorldScaleChanged(float p_scale) const;
+ 
+@@ -211,9 +217,15 @@ public:
+ 	// which visionOS lets ARKit track hands.
+ 	bool wantsHandTracking() const;
+ 
++	// Copies of a bridge share this view's identity, including after its native host closes.
++	void setHandTrackingViewPresented(bool p_presented) const;
++	bool beginHandTracking() const;
++	void endHandTracking() const;
++	void closeHandTrackingView() const;
++
+ 	// Publish joint p_joint, an XRHandTracker::HandJoint, of a hand's skeleton, in scene-root-local
+ 	// space, on the engine's hand tracker for that hand ("/user/hand_tracker/left" or "right").
+-	void setHandJoint(ControllerHand p_hand, int32_t p_joint, GDRKTransform p_transform) const;
++	void setHandJoint(ControllerHand p_hand, int32_t p_joint, GDRKTransform p_transform, bool p_valid, bool p_tracked) const;
+ 
+ 	// Mark whether a hand is tracked, once its joints for this frame are published.
+ 	void setHandTracked(ControllerHand p_hand, bool p_tracked) const;
+@@ -244,6 +256,8 @@ public:
+ private:
+ 	mutable gdrk::SceneLoader *loader = nullptr;
+ 	uint64_t window_id = 0;
++	std::shared_ptr<GDRKHandTrackingViewState> hand_view;
++	static std::shared_ptr<GDRKHandTrackingViewState> make_hand_view(uint64_t p_window_id);
+ 
+ 	// The live loader, or null once the window it presented has closed.
+ 	gdrk::SceneLoader *resolve_loader() const;
+diff --git a/godotrealitykit/GodotRealityKit/Nodes/window_hosts.mm b/godotrealitykit/GodotRealityKit/Nodes/window_hosts.mm
+index ee27bf4..5ee85a4 100644
+--- a/godotrealitykit/GodotRealityKit/Nodes/window_hosts.mm
++++ b/godotrealitykit/GodotRealityKit/Nodes/window_hosts.mm
+@@ -211,6 +211,18 @@ void WindowHosts::node_added(godot::Node *p_node) {
+ }
+ 
+ void WindowHosts::node_removed(godot::Node *p_node) {
++	if (godot::Object::cast_to<godot::Window>(p_node)) {
++		// A rejected native open creates a Host but never gets windowDidClose. Match the
++		// ObjectID, since a removed Window may no longer have its original display ID.
++		for (const auto &[window_id, host] : hosts) {
++			if (uint64_t(host.window) == p_node->get_instance_id()) {
++				window_closed(window_id);
++				break;
++			}
++		}
++		host_window_cache.clear();
++		return;
++	}
+ 	if (SceneLoader *loader = loader_for(p_node)) {
+ 		loader->get_nodes()->node_removed(p_node);
+ 	}
+@@ -338,6 +350,9 @@ void WindowHosts::window_closed(uint64_t p_window_id) {
+ 	if (found == hosts.end()) {
+ 		return;
+ 	}
++	// Clear global hand trackers before SwiftUI's deferred onDisappear callback. Its copied
++	// bridge may outlive this host; hand invalidation never reads the deleted scene loader.
++	found->second.delegate->closeHandTrackingView();
+ 	// A closed volume has no size; reopening it reports its size again.
+ 	godot::Window *window = godot::Object::cast_to<godot::Window>(godot::ObjectDB::get_instance(found->second.window));
+ 	if (RealityVolumeCamera3D *camera = godot::Object::cast_to<RealityVolumeCamera3D>(find_window_camera(window))) {
+diff --git a/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift b/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift
+index fb3dd8b..567beca 100644
+--- a/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift
++++ b/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift
+@@ -9,19 +9,45 @@
+ //
+ //===----------------------------------------------------------------------===//
+ 
++import Foundation
++
++// A source or render timestamp is usable only in the recent, finite past. Kept
++// independent of ARKit so the actual predicate can also be tested on the host.
++func handTrackingTimestampIsFresh(_ timestamp: TimeInterval, now: TimeInterval) -> Bool {
++    timestamp.isFinite && now.isFinite && timestamp >= 0 && timestamp <= now && now - timestamp <= 0.25
++}
++
+ #if !os(macOS)
+ 
+ import ARKit
+ import RealityKit
++import QuartzCore
+ 
+ /// Tracks the person's hands in the immersive space, the only place visionOS lets ARKit track
+ /// them, and publishes each hand's joints to the engine's hand trackers (see
+ /// GDRKBridgeDelegate::setHandJoint). The immersive view holds one.
+ @MainActor
+ final class HandAnchors {
+-    private let session = ARKitSession()
+-    private let provider = HandTrackingProvider()
++    private var session = ARKitSession()
++    private var provider = HandTrackingProvider()
+     private var started = false
++    private var failed = false
++    private var active = true
++    private var generation: UInt64 = 0
++    private var runTask: Task<Void, Never>?
++    private var updatesTask: Task<Void, Never>?
++    private var eventsTask: Task<Void, Never>?
++    private var freshnessTask: Task<Void, Never>?
++    private var lastSceneUpdate: TimeInterval?
++    private var delegate: GDRKBridgeDelegate?
++    private struct Sample {
++        let anchor: HandAnchor
++        let timestamp: TimeInterval
++    }
++    private var left: Sample?
++    private var right: Sample?
++    // An unchanged hand still produces anchor updates. Expire a stalled stream without
++    // treating a render frame with no new ARKit update as tracking loss.
+ 
+     /// ARKit's joints, each with the XRHandTracker.HandJoint it stands for. ARKit has no palm
+     /// joint: the palm is taken halfway along the middle finger's metacarpal.
+@@ -39,55 +65,195 @@ final class HandAnchors {
+     ]
+     private static let palm: Int32 = 0
+ 
+-    /// Starts tracking when wanted and pushes both hands' joints, relative to `root`. Call once
+-    /// per scene update.
++    /// Starts tracking when wanted and publishes cached, fresh anchors in the view's space.
+     func update(root: RealityKit.Entity, delegate: GDRKBridgeDelegate?) {
+-        guard let delegate, delegate.wantsHandTracking(), HandTrackingProvider.isSupported else { return }
++        self.delegate = delegate
++        guard active, let delegate, delegate.wantsHandTracking(), HandTrackingProvider.isSupported else {
++            stop(delegate: delegate)
++            return
++        }
++        guard !failed else { return }
++        lastSceneUpdate = CACurrentMediaTime()
+         startIfNeeded()
+-        guard provider.state == .running else { return }
+-
++        guard provider.state == .running else {
++            invalidate()
++            return
++        }
+         let rootFromOrigin = root.transformMatrix(relativeTo: nil).inverse
+-        let latest = provider.latestAnchors
+-        publish(latest.leftHand, as: .leftHand, rootFromOrigin: rootFromOrigin, delegate: delegate)
+-        publish(latest.rightHand, as: .rightHand, rootFromOrigin: rootFromOrigin, delegate: delegate)
++        let now = CACurrentMediaTime()
++        publish(left, as: .leftHand, now: now, rootFromOrigin: rootFromOrigin, delegate: delegate)
++        publish(right, as: .rightHand, now: now, rootFromOrigin: rootFromOrigin, delegate: delegate)
+     }
+ 
+-    private func publish(_ anchor: HandAnchor?, as hand: ControllerHand, rootFromOrigin: simd_float4x4, delegate: GDRKBridgeDelegate) {
+-        guard let anchor, anchor.isTracked, let skeleton = anchor.handSkeleton else {
++    func setActive(_ active: Bool, delegate: GDRKBridgeDelegate?) {
++        self.active = active
++        if !active { stop(delegate: delegate) }
++    }
++
++    func stop(delegate: GDRKBridgeDelegate?) {
++        self.delegate = delegate
++        generation &+= 1
++        runTask?.cancel()
++        updatesTask?.cancel()
++        eventsTask?.cancel()
++        freshnessTask?.cancel()
++        lastSceneUpdate = nil
++        runTask = nil
++        updatesTask = nil
++        eventsTask = nil
++        freshnessTask = nil
++        session.stop()
++        started = false
++        failed = false
++        invalidate()
++        delegate?.endHandTracking()
++    }
++
++    private func invalidate() {
++        left = nil
++        right = nil
++        delegate?.setHandTracked(.leftHand, false)
++        delegate?.setHandTracked(.rightHand, false)
++    }
++
++    private func expireSamples(now: TimeInterval) {
++        // SceneEvents can stop while the app's UI still processes input. Never let its
++        // last published pose survive merely because no render callback checked its age.
++        guard let lastSceneUpdate, handTrackingTimestampIsFresh(lastSceneUpdate, now: now),
++              provider.state == .running else {
++            invalidate()
++            return
++        }
++        if let left, !handTrackingTimestampIsFresh(left.timestamp, now: now) {
++            self.left = nil
++            delegate?.setHandTracked(.leftHand, false)
++        }
++        if let right, !handTrackingTimestampIsFresh(right.timestamp, now: now) {
++            self.right = nil
++            delegate?.setHandTracked(.rightHand, false)
++        }
++    }
++
++    private func fail() {
++        stop(delegate: delegate)
++        // Do not repeatedly prompt or restart a stopped provider. A view reopen or
++        // inactive/active transition creates a fresh provider and permits a retry.
++        failed = true
++    }
++
++    private func publish(_ sample: Sample?, as hand: ControllerHand, now: TimeInterval,
++                         rootFromOrigin: simd_float4x4, delegate: GDRKBridgeDelegate) {
++        guard let sample, handTrackingTimestampIsFresh(sample.timestamp, now: now),
++              sample.anchor.isTracked, let skeleton = sample.anchor.handSkeleton else {
+             delegate.setHandTracked(hand, false)
+             return
+         }
+-        let rootFromAnchor = rootFromOrigin * anchor.originFromAnchorTransform
++        let rootFromAnchor = rootFromOrigin * sample.anchor.originFromAnchorTransform
+         func rootFromJoint(_ name: HandSkeleton.JointName) -> simd_float4x4 {
+             rootFromAnchor * skeleton.joint(name).anchorFromJointTransform
+         }
+-
+         for (name, joint) in Self.joints {
+-            delegate.setHandJoint(hand, joint, Self.transform(rootFromJoint(name)))
++            let matrix = rootFromJoint(name)
++            let tracked = skeleton.joint(name).isTracked && Self.isFinite(matrix)
++            delegate.setHandJoint(hand, joint, tracked ? Self.transform(matrix) : Self.transform(matrix_identity_float4x4), tracked, tracked)
+         }
+         var palm = rootFromJoint(.middleFingerKnuckle)
+         palm.columns.3 = (rootFromJoint(.middleFingerMetacarpal).columns.3 + palm.columns.3) * 0.5
+-        delegate.setHandJoint(hand, Self.palm, Self.transform(palm))
++        let palmValid = skeleton.joint(.middleFingerKnuckle).isTracked &&
++            skeleton.joint(.middleFingerMetacarpal).isTracked && Self.isFinite(palm)
++        // ARKit has no palm joint. This derived pose is valid when its inputs are tracked,
++        // but must not advertise itself as a directly tracked joint.
++        delegate.setHandJoint(hand, Self.palm, palmValid ? Self.transform(palm) : Self.transform(matrix_identity_float4x4), palmValid, false)
+         delegate.setHandTracked(hand, true)
+     }
+ 
++    private static func isFinite(_ matrix: simd_float4x4) -> Bool {
++        for column in 0..<4 {
++            for row in 0..<4 where !matrix[column][row].isFinite { return false }
++        }
++        return true
++    }
++
+     private static func transform(_ matrix: simd_float4x4) -> GDRKTransform {
+         let t = Transform(matrix: matrix)
+         return GDRKTransform(scale: t.scale, position: t.translation, orientation: t.rotation)
+     }
+ 
+     private func startIfNeeded() {
+-        guard !started else { return }
++        guard !started, delegate?.beginHandTracking() == true else { return }
+         started = true
+-        Task { @MainActor in
++        // A stopped ARKit data provider cannot be run again.
++        session = ARKitSession()
++        provider = HandTrackingProvider()
++        let session = session
++        let provider = provider
++        let generation = generation
++        updatesTask = Task { [weak self] in
++            for await update in provider.anchorUpdates {
++                guard !Task.isCancelled, let self, self.generation == generation else { return }
++                let anchor = update.anchor
++                let now = CACurrentMediaTime()
++                // Preserve the source time: draining queued updates must not make an old
++                // pose fresh again. ARKit hand timestamps and this clock use mach seconds.
++                let fresh = handTrackingTimestampIsFresh(update.timestamp, now: now)
++                let tracked = fresh && update.event != .removed && anchor.isTracked && anchor.handSkeleton != nil
++                let sample = tracked ? Sample(anchor: anchor, timestamp: update.timestamp) : nil
++                if anchor.chirality == .left {
++                    self.left = sample
++                    if !tracked { self.delegate?.setHandTracked(.leftHand, false) }
++                } else {
++                    self.right = sample
++                    if !tracked { self.delegate?.setHandTracked(.rightHand, false) }
++                }
++            }
++            guard !Task.isCancelled, let self, self.generation == generation else { return }
++            self.fail()
++        }
++        eventsTask = Task { [weak self] in
++            for await event in session.events {
++                guard !Task.isCancelled, let self, self.generation == generation else { return }
++                switch event {
++                case .authorizationChanged(let type, let status):
++                    if type == .handTracking && status != .allowed { self.invalidate() }
++                    if type == .handTracking && status == .denied { self.fail(); return }
++                case .dataProviderStateChanged(_, let state, let error):
++                    if state != .running { self.invalidate() }
++                    if state == .stopped || error != nil { self.fail(); return }
++                @unknown default:
++                    self.fail()
++                    return
++                }
++            }
++            guard !Task.isCancelled, let self, self.generation == generation else { return }
++            self.fail()
++        }
++        freshnessTask = Task { [weak self] in
++            while !Task.isCancelled {
++                do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return }
++                guard !Task.isCancelled, let self, self.generation == generation else { return }
++                self.expireSamples(now: CACurrentMediaTime())
++            }
++        }
++        runTask = Task { [weak self] in
+             do {
+-                try await self.session.run([self.provider])
++                try await session.run([provider])
++                guard !Task.isCancelled, self?.generation == generation else { return }
+                 NSLog("[GDRK] hand tracking started")
+             } catch {
++                guard !Task.isCancelled, let self, self.generation == generation else { return }
+                 NSLog("[GDRK] hand tracking unavailable: \(error)")
++                self.fail()
+             }
+         }
+     }
++
++    deinit {
++        runTask?.cancel()
++        updatesTask?.cancel()
++        eventsTask?.cancel()
++        freshnessTask?.cancel()
++        session.stop()
++    }
+ }
+ 
+ #endif
+diff --git a/godotrealitykit/GodotRealityKit/RealityKitBridge.swift b/godotrealitykit/GodotRealityKit/RealityKitBridge.swift
+index dd00f0b..07b9dc3 100644
+--- a/godotrealitykit/GodotRealityKit/RealityKitBridge.swift
++++ b/godotrealitykit/GodotRealityKit/RealityKitBridge.swift
+@@ -404,7 +404,8 @@ struct ImmersiveRealityView : View {
+     let delegate: GDRKBridgeDelegate?
+     
+     let state = ImmersiveRealityViewState()
+-    let hands = HandAnchors()
++    @State private var hands = HandAnchors()
++    @Environment(\.scenePhase) private var scenePhase
+     // Tracks spatial controllers when the immersive space is a Window's, in the 2D Window style.
+     let accessories = AccessoryAnchors()
+ 
+@@ -423,6 +424,15 @@ struct ImmersiveRealityView : View {
+             .installGestures(delegate: self.delegate, root: self.root, size: proxy.size)
+             .setupProjectSettings(from: delegate)
+         }
++        .onAppear {
++            delegate?.setHandTrackingViewPresented(true)
++            hands.setActive(scenePhase == .active, delegate: delegate)
++        }
++        .onChange(of: scenePhase) { _, phase in hands.setActive(phase == .active, delegate: delegate) }
++        .onDisappear {
++            hands.setActive(false, delegate: delegate)
++            delegate?.setHandTrackingViewPresented(false)
++        }
+     }
+ 
+     private func onSceneUpdate(event: SceneEvents.Update) {
+diff --git a/godotrealitykit/GodotRealityKit/extension.mm b/godotrealitykit/GodotRealityKit/extension.mm
+index c321aeb..0427a99 100644
+--- a/godotrealitykit/GodotRealityKit/extension.mm
++++ b/godotrealitykit/GodotRealityKit/extension.mm
+@@ -12,6 +12,7 @@
+ #include <algorithm>
+ #include <cstring>
+ #include <type_traits>
++#include <unordered_map>
+ 
+ #import "clipping_3d.h"
+ #import "controller_xr_interface.h"
+@@ -37,6 +38,7 @@
+ #include <godot_cpp/classes/engine.hpp>
+ #include <godot_cpp/classes/image.hpp>
+ #include <godot_cpp/classes/project_settings.hpp>
++#include <godot_cpp/classes/ref_counted.hpp>
+ #include <godot_cpp/classes/window.hpp>
+ #include <godot_cpp/classes/xr_origin3d.hpp>
+ #include <godot_cpp/classes/xr_hand_tracker.hpp>
+@@ -50,8 +52,39 @@
+ #import <Foundation/Foundation.h>
+ #import <GameController/GameController.h>
+ 
++// Main-thread state shared by the native host and Swift copies of its bridge. A weak
++// map does not extend a closed view's lifetime, and replacement at the same Window ID
++// cannot let a deferred callback claim or invalidate the replacement's trackers.
++struct GDRKHandTrackingViewState {
++    uint64_t window_id;
++    bool presented = false;
++    bool closed = false;
++};
++static std::unordered_map<uint64_t, std::weak_ptr<GDRKHandTrackingViewState>> hand_views;
++static std::weak_ptr<GDRKHandTrackingViewState> hand_owner;
++
+ namespace gdrk {
+ 
++// An explicit capability check for consumers requiring lifecycle-safe skeletal data.
++// XRHandTracker remains the data API; this is not a second hand-tracking provider.
++class RealityKitHandTracking : public godot::RefCounted {
++    GDCLASS(RealityKitHandTracking, godot::RefCounted);
++protected:
++    static void _bind_methods() {
++        godot::ClassDB::bind_method(godot::D_METHOD("get_api_revision"), &RealityKitHandTracking::get_api_revision);
++        godot::ClassDB::bind_method(godot::D_METHOD("is_immersive_presented", "window_id"), &RealityKitHandTracking::is_immersive_presented);
++    }
++public:
++    int get_api_revision() const { return 1; }
++    bool is_immersive_presented(int64_t p_window_id) const {
++        if (p_window_id < 0) { return false; }
++        auto found = hand_views.find(uint64_t(p_window_id));
++        if (found == hand_views.end()) { return false; }
++        auto state = found->second.lock();
++        return state && !state->closed && state->presented;
++    }
++};
++
+ void install_renderer_relaunch_guard();
+ 
+ void initialize_gdrk_module(godot::ModuleInitializationLevel p_level) {
+@@ -85,6 +118,7 @@ void initialize_gdrk_module(godot::ModuleInitializationLevel p_level) {
+ 		GDREGISTER_CLASS(RealityKitDirectionalLightShadow3D);
+ 		GDREGISTER_CLASS(InputEventSpatialTouch);
+ 		GDREGISTER_CLASS(InputEventSpatialDrag);
++		GDREGISTER_CLASS(RealityKitHandTracking);
+ 
+ #if TESTING_ENABLED
+ 		godot::print_line("Testing enabled: Registering GodotXCTestNode");
+@@ -712,6 +746,47 @@ void GDRKBridgeDelegate::setControllerAim(ControllerHand p_hand, GDRKTransform p
+ 	});
+ }
+ 
++std::shared_ptr<GDRKHandTrackingViewState> GDRKBridgeDelegate::make_hand_view(uint64_t p_window_id) {
++    auto state = std::make_shared<GDRKHandTrackingViewState>();
++    state->window_id = p_window_id;
++    hand_views[p_window_id] = state;
++    return state;
++}
++
++void GDRKBridgeDelegate::setHandTrackingViewPresented(bool p_presented) const {
++    if (!hand_view || hand_view->closed) { return; }
++    hand_view->presented = p_presented;
++    if (!p_presented) { endHandTracking(); }
++}
++
++bool GDRKBridgeDelegate::beginHandTracking() const {
++    auto found = hand_views.find(window_id);
++    if (!hand_view || hand_view->closed || !hand_view->presented || !wantsHandTracking() ||
++            found == hand_views.end() || found->second.lock() != hand_view) { return false; }
++    auto current = hand_owner.lock();
++    if (current && current != hand_view) { return false; }
++    hand_owner = hand_view;
++    setHandTracked(kLeftHand, false);
++    setHandTracked(kRightHand, false);
++    return true;
++}
++
++void GDRKBridgeDelegate::endHandTracking() const {
++    if (!hand_view || hand_owner.lock() != hand_view) { return; }
++    setHandTracked(kLeftHand, false);
++    setHandTracked(kRightHand, false);
++    hand_owner.reset();
++}
++
++void GDRKBridgeDelegate::closeHandTrackingView() const {
++    endHandTracking();
++    if (!hand_view) { return; }
++    hand_view->closed = true;
++    hand_view->presented = false;
++    auto found = hand_views.find(window_id);
++    if (found != hand_views.end() && found->second.lock() == hand_view) { hand_views.erase(found); }
++}
++
+ bool GDRKBridgeDelegate::wantsHandTracking() const {
+ 	static const bool enabled = godot::ProjectSettings::get_singleton()->get_setting("xr/visionos/enable_hand_tracking", false);
+ 	if (!enabled) {
+@@ -734,33 +809,56 @@ static godot::XRHandTracker *hand_tracker(ControllerHand p_hand) {
+ 		made->set_tracker_name(p_hand == kLeftHand ? "/user/hand_tracker/left" : "/user/hand_tracker/right");
+ 		made->set_tracker_hand(tracker_hand(p_hand));
+ 		made->set_hand_tracking_source(godot::XRHandTracker::HAND_TRACKING_SOURCE_UNOBSTRUCTED);
++		// XRHandTracker's native joint flags are not initialized by this engine revision.
++		made->set_has_tracking_data(false);
++		for (int joint = 0; joint < godot::XRHandTracker::HAND_JOINT_MAX; joint++) {
++			made->set_hand_joint_flags(godot::XRHandTracker::HandJoint(joint), 0);
++		}
+ 		godot::XRServer::get_singleton()->add_tracker(made);
+ 		tracker = made.ptr();
+ 	}
+ 	return tracker;
+ }
+ 
+-void GDRKBridgeDelegate::setHandJoint(ControllerHand p_hand, int32_t p_joint, GDRKTransform p_transform) const {
+-	godot::XRServer *xr_server = godot::XRServer::get_singleton();
+-	ERR_FAIL_NULL(xr_server);
+-	godot::Transform3D pose = to_tracker_pose(p_transform, tracking_origin(xrOrigin()));
+-	pose.basis.orthonormalize();
+-
+-	godot::XRHandTracker *tracker = hand_tracker(p_hand);
+-	const auto joint = godot::XRHandTracker::HandJoint(p_joint);
+-	tracker->set_hand_joint_transform(joint, pose);
+-	tracker->set_hand_joint_flags(joint, godot::XRHandTracker::HAND_JOINT_FLAG_ORIENTATION_VALID | godot::XRHandTracker::HAND_JOINT_FLAG_ORIENTATION_TRACKED | godot::XRHandTracker::HAND_JOINT_FLAG_POSITION_VALID | godot::XRHandTracker::HAND_JOINT_FLAG_POSITION_TRACKED);
+-	if (joint == godot::XRHandTracker::HAND_JOINT_PALM) {
+-		tracker->set_pose("default", pose, godot::Vector3(), godot::Vector3(), godot::XRPose::XR_TRACKING_CONFIDENCE_HIGH);
+-	}
++void GDRKBridgeDelegate::setHandJoint(ControllerHand p_hand, int32_t p_joint, GDRKTransform p_transform, bool p_valid, bool p_tracked) const {
++    if (!hand_view || hand_owner.lock() != hand_view) { return; }
++    ERR_FAIL_NULL(godot::XRServer::get_singleton());
++    ERR_FAIL_INDEX(p_joint, godot::XRHandTracker::HAND_JOINT_MAX);
++    godot::XRHandTracker *tracker = hand_tracker(p_hand);
++    const auto joint = godot::XRHandTracker::HandJoint(p_joint);
++    godot::Transform3D pose = to_tracker_pose(p_transform, tracking_origin(xrOrigin()));
++    p_valid = p_valid && pose.is_finite();
++    if (p_valid) {
++        pose.basis.orthonormalize();
++        tracker->set_hand_joint_transform(joint, pose);
++    }
++    uint32_t flags = 0;
++    if (p_valid) {
++        flags = godot::XRHandTracker::HAND_JOINT_FLAG_ORIENTATION_VALID | godot::XRHandTracker::HAND_JOINT_FLAG_POSITION_VALID;
++        if (p_tracked) {
++            flags |= godot::XRHandTracker::HAND_JOINT_FLAG_ORIENTATION_TRACKED | godot::XRHandTracker::HAND_JOINT_FLAG_POSITION_TRACKED;
++        }
++    }
++    tracker->set_hand_joint_flags(joint, flags);
++    if (joint == godot::XRHandTracker::HAND_JOINT_PALM) {
++        if (p_valid) {
++            tracker->set_pose("default", pose, godot::Vector3(), godot::Vector3(), godot::XRPose::XR_TRACKING_CONFIDENCE_LOW);
++        } else {
++            tracker->invalidate_pose("default");
++        }
++    }
+ }
+ 
+ void GDRKBridgeDelegate::setHandTracked(ControllerHand p_hand, bool p_tracked) const {
+-	godot::XRHandTracker *tracker = hand_tracker(p_hand);
+-	tracker->set_has_tracking_data(p_tracked);
+-	if (!p_tracked) {
+-		tracker->invalidate_pose("default");
+-	}
++    if (!hand_view || hand_owner.lock() != hand_view || !godot::XRServer::get_singleton()) { return; }
++    godot::XRHandTracker *tracker = hand_tracker(p_hand);
++    tracker->set_has_tracking_data(p_tracked);
++    if (!p_tracked) {
++        for (int joint = 0; joint < godot::XRHandTracker::HAND_JOINT_MAX; joint++) {
++            tracker->set_hand_joint_flags(godot::XRHandTracker::HandJoint(joint), 0);
++        }
++        tracker->invalidate_pose("default");
++    }
+ }
+ 
+ void GDRKBridgeDelegate::setControllerInput(ControllerHand p_hand, void *p_gc_controller) const {

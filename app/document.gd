@@ -11,6 +11,8 @@ const SPEEDS := [0.5, 1.0, 2.0, 4.0]
 const Meta := preload("res://app/meta.gd")
 const ModelFrames := preload("res://app/model_frames.gd")
 const NotesImages := preload("res://app/notes_images.gd")
+const HandWorkbench := preload("res://app/hand_workbench.tscn")
+const HandWorkbenchScript := preload("res://app/hand_workbench.gd")
 const SpatialProbe := preload("res://app/spatial_probe.gd")
 ## Seconds a volume takes to open before the resize hint shows.
 const HINT_DELAY := 0.6
@@ -62,6 +64,7 @@ var probing := false
 var _probe_field := -1
 var _options_base_width := 0.0
 
+var hand_workbench: Node
 var source_path := ""
 var meta := Meta.new()
 ## One per model, showing it at the current frame.
@@ -98,6 +101,10 @@ var _radius := 1.0
 func _ready() -> void:
 	_options_base_width = options.size.x / options.content_scale_factor
 	history.setup(self)
+	%Hands.visible = OS.has_feature("visionos")
+	var hand_problem := HandWorkbenchScript.availability()
+	%Hands.disabled = not hand_problem.is_empty()
+	%Hands.tooltip_text = hand_problem if not hand_problem.is_empty() else "Enter a mixed immersive space to inspect the field with tracked fingertips."
 	inspection.changed.connect(_refresh_inspection)
 	probe_tools.minimum_size_changed.connect(_resize_probe_options)
 	$Model/Options/Bar.minimum_size_changed.connect(_resize_probe_options)
@@ -230,6 +237,33 @@ func select_field(index: int) -> void:
 	update_field()
 
 
+func start_hand_tracking() -> void:
+	if is_instance_valid(hand_workbench) and not hand_workbench.is_queued_for_deletion():
+		hand_workbench.panel.grab_focus()
+		return
+	hand_workbench = HandWorkbench.instantiate()
+	hand_workbench.failed.connect(_show_hand_tracking_error)
+	add_child(hand_workbench)
+	var error: String = hand_workbench.start(self)
+	if not error.is_empty():
+		hand_workbench.queue_free()
+		_show_hand_tracking_error(error)
+
+
+func _show_hand_tracking_error(message: String) -> void:
+	if is_queued_for_deletion():
+		return
+	var alert := AcceptDialog.new()
+	alert.title = "Hand inspection unavailable"
+	alert.dialog_text = message
+	alert.dialog_autowrap = true
+	alert.size = Vector2i(880, 240)
+	model.add_child(alert)
+	alert.confirmed.connect(alert.queue_free)
+	alert.canceled.connect(alert.queue_free)
+	alert.popup_centered()
+
+
 func show_probe_history() -> void:
 	history.show()
 	history.refresh()
@@ -262,6 +296,8 @@ func show_resize_hint() -> void:
 
 
 func close() -> void:
+	if is_instance_valid(hand_workbench):
+		hand_workbench.stop()
 	history.cancel_analysis()
 	inspection.clear()
 	meta.close()

@@ -76,3 +76,4 @@ textures/vram_compression/import_etc2_astc=true
 [xr]
 
 visionos/enable_controller_tracking=true
+visionos/enable_hand_tracking=true

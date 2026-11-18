@@ -299,6 +299,14 @@ size_flags_vertical = 4
 tooltip_text = "Pause and place two scalar probes with a pinch. Turn off to rotate the model."
 text = "Probe"
 
+[node name="Hands" type="Button" parent="Model/Options/Bar"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_vertical = 4
+text = "Track fingers…"
+
 [node name="Inspect" type="Button" parent="Model/Options/Bar"]
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
@@ -401,3 +409,5 @@ bbcode_enabled = true
 
 [connection signal="pressed" from="Model/Options/Bar/Inspect" to="." method="show_probe_history"]
 [connection signal="close_requested" from="Model/ProbeHistory" to="." method="hide_probe_history"]
+
+[connection signal="pressed" from="Model/Options/Bar/Hands" to="." method="start_hand_tracking"]

@@ -1,2 +1,5 @@
 # Normalize EOL for all files that Git considers text files.
 * text=auto eol=lf
+
+# Unified diffs retain whitespace in their context lines.
+patches/*.patch -whitespace
