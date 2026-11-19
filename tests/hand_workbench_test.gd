@@ -343,6 +343,20 @@ func _run() -> void:
 	api.revision = 1
 	document.volume.set_immersive(true)
 	_check(document.volume.is_immersive() and not document.volume.has_safe_hand_tracking(), "Ordinary team immersion remains available with a stock/older addon")
+	_put(document, "left", INDEX, Vector3(0.625, 0.5, 0.5))
+	_put(document, "left", THUMB, Vector3(0.5, 0.5, 0.5))
+	_put(document, "right", INDEX, Vector3(0.875, 0.5, 0.5))
+	document.sound._process(0.0)
+	_check(document.sound._voices[_trackers.left].target_loudness > 0.0 and document.sound._voices[_trackers.right].target_loudness > 0.0, "The older-addon fallback preserves both team finger-sound voices")
+	var fallback_center: Vector3 = host._space_center
+	host._handle.input_event.emit(host._head, _event("InputEventSpatialTouch"), Vector3.ZERO, Vector3.ZERO, 0)
+	for joint in [INDEX, THUMB]:
+		var pose: Transform3D = _trackers.left.get_hand_joint_transform(joint)
+		pose.origin += Vector3(0.01, 0.02, 0.03)
+		_trackers.left.set_hand_joint_transform(joint, pose)
+	host._handle.input_event.emit(host._head, _event("InputEventSpatialDrag"), Vector3.ZERO, Vector3.ZERO, 0)
+	_check(host._space_center.is_equal_approx(fallback_center + Vector3(0.01, 0.02, 0.03)), "The older-addon fallback preserves the normal team drag handle")
+	host._handle.input_event.emit(host._head, _event("InputEventSpatialTouch", false), Vector3.ZERO, Vector3.ZERO, 0)
 	var unsupported := _tools(document)
 	_check(not unsupported.start(document).is_empty(), "Continuous A/B pinning explains its stricter capability requirement")
 	unsupported.stop()
