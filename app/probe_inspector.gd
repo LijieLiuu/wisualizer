@@ -33,8 +33,8 @@ class Job extends RefCounted:
 		mutex.unlock()
 		return value
 
-	func analyze(path: String, field_index: int, points: Dictionary, identity: Dictionary) -> Dictionary:
-		return History.new().analyze(path, field_index, points, identity, is_canceled, report)
+	func analyze(path: String, field_index: int, points: Dictionary, identity: Dictionary, model_index: int) -> Dictionary:
+		return History.new().analyze(path, field_index, points, identity, is_canceled, report, model_index)
 
 	func export_csv(data: Dictionary, path: String, protected: PackedStringArray) -> Dictionary:
 		return {error = History.new().export_csv(data, path, is_canceled, protected), path = path}
@@ -50,6 +50,7 @@ var document: Node
 var result: Dictionary = {}
 var _points: Dictionary = {}
 var _field := -1
+var _model := -1
 var _active := false
 var _generation := 0
 var _task_generation := 0
@@ -80,25 +81,27 @@ func is_busy() -> bool:
 func refresh() -> void:
 	if document == null or not is_node_ready():
 		return
-	var window_title: String = document.meta.title + " – Probe history"
+	var model_title: String = document.model.title if not document.model.title.is_empty() else (document.meta.title if document.meta.models.size() < 2 else document.meta.title + " – " + document.entry.name)
+	var window_title: String = model_title + " – Probe history"
 	if title != window_title:
 		title = window_title
 	var points: Dictionary = document.inspection.get_committed_points()
 	var active: bool = document.inspection.is_active()
-	if _field != document.field_index or points != _points or (active and not _active):
+	if _model != document.model_index or _field != document.field_index or points != _points or (active and not _active):
 		_invalidate()
-		if _field != document.field_index:
+		if _model != document.model_index or _field != document.field_index:
 			_session_path = ""
+		_model = document.model_index
 		_field = document.field_index
 		_points = points
 	_active = active
-	var has_field: bool = _field >= 0 and _field < document.meta.fields.size()
+	var has_field: bool = _field >= 0 and _field < document.entry.fields.size()
 	if has_field:
-		var entry = document.meta.fields[_field]
+		var entry = document.entry.fields[_field]
 		%CellX.max_value = entry.cells.x - 1
 		%CellY.max_value = entry.cells.y - 1
 		%CellZ.max_value = entry.cells.z - 1
-		readout.text = document.format_probe_readings(_points)
+		readout.text = "Model %d: %s\n" % [document.model_index + 1, document.entry.name] + document.format_probe_readings(_points)
 		if active:
 			readout.text += "\nPlacement in progress; history uses released pins."
 	else:
@@ -125,9 +128,9 @@ func _invalidate() -> void:
 
 
 func place_cell(slot: int) -> void:
-	if document == null or document.meta.fields.is_empty() or document.inspection.is_active():
+	if document == null or document.entry.fields.is_empty() or document.inspection.is_active():
 		return
-	var entry = document.meta.fields[document.field_index]
+	var entry = document.entry.fields[document.field_index]
 	var cell := Vector3i(int(%CellX.value), int(%CellY.value), int(%CellZ.value))
 	var points: Dictionary = document.inspection.get_committed_points()
 	var point := (Vector3(cell) + Vector3.ONE * 0.5) / Vector3(entry.cells)
@@ -146,14 +149,14 @@ func analyze() -> void:
 	refresh()
 	if %Analyze.disabled:
 		return
-	var snapshot := History.snapshot(document.meta, document.field_index)
+	var snapshot := History.snapshot(document.meta, document.field_index, document.model_index)
 	if not snapshot.error.is_empty():
 		status.text = snapshot.error
 		return
 	result = {}
 	timeline.clear()
 	_job = Job.new()
-	_start("analyze", _job.analyze.bind(document.source_path, document.field_index, _points.duplicate(), snapshot.identity))
+	_start("analyze", _job.analyze.bind(document.source_path, document.field_index, _points.duplicate(), snapshot.identity, document.model_index))
 
 
 func _start(kind: String, work: Callable) -> void:
@@ -259,11 +262,11 @@ func export_to(path: String) -> void:
 
 
 func save_points(path: String) -> void:
-	if is_busy() or _active or document.meta.fields.is_empty():
+	if is_busy() or _active or document.entry.fields.is_empty():
 		return
 	if path.get_extension().to_lower() != "json":
 		path += ".json"
-	var error: String = History.new().save_session(document.meta, document.field_index, _points, document.source_path, path)
+	var error: String = History.new().save_session(document.meta, document.field_index, _points, document.source_path, path, Callable(), document.model_index)
 	status.text = error if not error.is_empty() else "Saved probe positions to " + path.get_file()
 	if error.is_empty():
 		_session_path = path
@@ -275,6 +278,9 @@ func load_points(path: String) -> void:
 	var restored: Dictionary = History.new().restore_session(path, document.meta, document.source_path)
 	if not restored.error.is_empty():
 		status.text = restored.error
+		return
+	if restored.model_index != document.model_index:
+		status.text = "These positions belong to a different model. Open that model’s inspector to restore them."
 		return
 	document.select_field(restored.field_index)
 	document.inspection.set_points(restored.points)

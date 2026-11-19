@@ -1,18 +1,24 @@
 extends RefCounted
 ## A ZIP's contents, read through its meta.json; see docs/zip-format.md.
-## Keeps the ZIP open, so frames can be read as they are needed.
+## Keeps the ZIP open, so steps can be read as they are needed.
 
 const MANIFEST := "meta.json"
 const ZipFiles := preload("res://app/zip_files.gd")
 const ScalarData := preload("res://app/scalar_data.gd")
 
 
-## One model in the ZIP.
-class Model:
+## One of a model's parts.
+class Part:
 	var name := ""
-	## The model's GLB at each frame. A model that doesn't change has the same
-	## GLB at every frame.
+	## The part's GLB at each frame of its model. A part that doesn't change
+	## has the same GLB at every frame.
 	var files := PackedStringArray()
+	## Its steps as the ZIP has them: a GLB per solver time, in order, or
+	## one GLB with no time.
+	var step_times := PackedFloat64Array()
+	var step_files := PackedStringArray()
+	## Index into step_files for each displayed model frame.
+	var frame_steps := PackedInt32Array()
 
 
 ## One field in the ZIP.
@@ -25,47 +31,84 @@ class Field:
 	var cells := Vector3i.ZERO
 	## Maps a unit cube onto the grid, in model units.
 	var box := Transform3D()
-	## Retain the original factors so editing does not normalize or round them.
 	var size := Vector3.ONE
 	var axes := Basis()
-	## The field's brick at each frame.
+	## The field's brick at each frame of its model.
 	var files := PackedStringArray()
+	## Its steps as the ZIP has them: a brick per solver time, in order.
+	var step_times := PackedFloat64Array()
+	var step_files := PackedStringArray()
+	## Index into step_files for each displayed model frame.
+	var frame_steps := PackedInt32Array()
+	## The largest byte in any of its bricks, or 0 until it is measured.
+	var peak := 0
 
 	## The value [param byte] stands for, or NAN for a cell with no value.
 	func value_of(byte: int) -> float:
-		if byte == 0:
-			return NAN
-		if range.x == range.y:
-			return range.x
-		var weight := (byte - 1) / 254.0
-		return range.x * (1.0 - weight) + range.y * weight
+		return NAN if byte == 0 else lerpf(range.x, range.y, (byte - 1) / 254.0)
 
 	## A value with its unit, such as "0.067 T".
 	func format(value: float) -> String:
-		var text := String.num(value, 3) if absf(value) >= 0.01 or value == 0.0 else String.num_scientific(value)
+		var text := String.num(value, 3) if absf(value) >= 0.01 or value == 0.0 else _scientific(value)
 		return text if unit.is_empty() else "%s %s" % [text, unit]
+
+	## [param value] as "9.38e-05". GDScript's % has no %e: it fails the call.
+	static func _scientific(value: float) -> String:
+		var exponent := floori(log(absf(value)) / log(10.0))
+		var mantissa := value / pow(10.0, exponent)
+		# Rounding to two decimals can carry 9.996 up to 10.00.
+		if absf(mantissa) >= 9.995:
+			mantissa /= 10.0
+			exponent += 1
+		return "%.2fe%s%02d" % [mantissa, "-" if exponent < 0 else "+", absi(exponent)]
+
+
+## Text shown in the volume at a point, while a controller is near it.
+class PointLabel:
+	var text := ""
+	## The point, in model units.
+	var position := Vector3.ZERO
+	## How near a controller comes for the text to show, in model units, or
+	## 0 for the default.
+	var radius := 0.0
+	## The first and last frames it shows at, counted from 0.
+	var frames := Vector2i.ZERO
+
+	func shows_at(frame: int) -> bool:
+		return frame >= frames.x and frame <= frames.y
+
+
+## One model: its own volume, timeline, parts, fields and labels.
+class Model:
+	var name := ""
+	## The solver time of each frame.
+	var times := PackedFloat64Array()
+	var parts: Array[Part] = []
+	var fields: Array[Field] = []
+	var labels: Array[PointLabel] = []
+	## The index of the field shown first.
+	var first_field := 0
 
 
 var title := ""
-var times := PackedFloat64Array()
 var models: Array[Model] = []
-var fields: Array[Field] = []
-## The index of the field shown first.
-var first_field := 0
-## Where the notes are in the ZIP, or "" without notes.
+## Flat archives become one model with their original geometry entries as parts.
+var legacy := false
+## Compatibility aliases for older single-model analysis callers.
+var times: PackedFloat64Array:
+	get: return models[0].times if not models.is_empty() else PackedFloat64Array()
+var fields: Array[Field]:
+	get: return models[0].fields if not models.is_empty() else []
+var first_field: int:
+	get: return models[0].first_field if not models.is_empty() else 0
 var notes := ""
-## Supporting source files, preserved without interpreting their contents.
 var attachments := PackedStringArray()
-
 var _zip := ZIPReader.new()
 var _is_open := false
-## ZIP central-directory metadata distinguishes empty files from read failures.
 var entries := {}
 var file_names := PackedStringArray()
 
 
-## Opens the ZIP at [param path]. Returns an empty string, or what is
-## wrong with it.
 func open(path: String) -> String:
 	var error := _open(path)
 	if not error.is_empty():
@@ -76,11 +119,9 @@ func open(path: String) -> String:
 func _open(path: String) -> String:
 	close()
 	title = ""
-	times = PackedFloat64Array()
 	models.clear()
-	fields.clear()
+	legacy = false
 	attachments = PackedStringArray()
-	first_field = 0
 	notes = ""
 	entries = {}
 	file_names = PackedStringArray()
@@ -117,56 +158,23 @@ func _open(path: String) -> String:
 		if manifest.has(key) and not manifest[key] is Array:
 			return "The manifest's %s must be an array." % key
 	title = manifest.get("title", path.get_file().get_basename())
-	for entry in manifest.get("frames", []):
-		if not entry is Dictionary or not ScalarData.is_finite_number(entry.get("time")):
-			return "Frame %d needs a finite numeric solver time." % (times.size() + 1)
-		times.append(float(entry.time))
-	if times.is_empty():
-		return "The ZIP has no frames."
-	for entry in manifest.get("models", []):
-		if not entry is Dictionary:
-			return "Each model must be an object."
-		text_error = _string_keys(entry, ["name", "path"])
-		if not text_error.is_empty():
-			return "Model: " + text_error
+	legacy = manifest.has("frames")
+	if legacy:
 		var model := Model.new()
-		model.name = entry.get("name", "Model %d" % (models.size() + 1))
-		model.files = _per_frame(entry.get("path", ""), "glb")
-		if model.files.is_empty():
-			return "The model %s needs a GLB, or a folder with a GLB for each of the %d frames." % [model.name, times.size()]
+		model.name = title
+		var error := _read_legacy(model, manifest)
+		if not error.is_empty():
+			return error
 		models.append(model)
-	for entry in manifest.get("fields", []):
-		if not entry is Dictionary:
-			return "Each field must be an object."
-		text_error = _string_keys(entry, ["name", "quantity", "unit", "path"])
-		if not text_error.is_empty():
-			return "Field: " + text_error
-		var field := Field.new()
-		field.name = entry.get("name", "Field %d" % (fields.size() + 1))
-		field.quantity = entry.get("quantity", "")
-		field.unit = entry.get("unit", "")
-		var span := ScalarData.parse_range(entry.get("range", [0.0, 1.0]))
-		if not span.error.is_empty():
-			return "Field %s: %s" % [field.name, span.error]
-		field.range = span.value
-		var cells := ScalarData.parse_cells(entry.get("cells"))
-		if not cells.error.is_empty():
-			return "Field %s: %s" % [field.name, cells.error]
-		field.cells = cells.value
-		var box := ScalarData.parse_box(entry.get("box", {}))
-		if not box.error.is_empty():
-			return "Field %s: %s" % [field.name, box.error]
-		field.box = box.value
-		field.size = box.size
-		field.axes = box.axes
-		field.files = _per_frame(entry.get("path", ""), "bin")
-		if field.files.is_empty():
-			return "The field %s needs cells, and a folder with a brick for each of the %d frames." % [field.name, times.size()]
-		var expected := ScalarData.cell_count(field.cells)
-		for file in field.files:
-			if entries[file].size != expected:
-				return "Field %s: %s has %d bytes; its grid requires exactly %d." % [field.name, file, entries[file].size, expected]
-		fields.append(field)
+	else:
+		for entry in manifest.get("models", []):
+			if not entry is Dictionary:
+				return "Each model must be an object."
+			var model := Model.new()
+			var error := _read_model(model, entry)
+			if not error.is_empty():
+				return error
+			models.append(model)
 	if models.is_empty():
 		return "The ZIP has no models."
 	notes = manifest.get("notes", "")
@@ -183,11 +191,226 @@ func _open(path: String) -> String:
 			return "The attachment %s is listed more than once." % file
 		listed[file.to_lower()] = true
 		attachments.append(file)
-	for index in fields.size():
-		if fields[index].name == manifest.get("field", ""):
-			first_field = index
-			break
 	return ""
+
+
+func _read_model(model: Model, entry: Dictionary) -> String:
+	var error := _string_keys(entry, ["name", "field"])
+	if not error.is_empty():
+		return "Model: " + error
+	model.name = entry.get("name", "Model %d" % (models.size() + 1))
+	for key in ["parts", "fields", "labels"]:
+		if entry.has(key) and not entry[key] is Array:
+			return "Model %s: %s must be an array." % [model.name, key]
+	var all_times := PackedFloat64Array()
+	for value in entry.get("parts", []):
+		if not value is Dictionary or not _string_keys(value, ["name", "path"]).is_empty():
+			return "Model %s has invalid part metadata." % model.name
+		var part := Part.new()
+		part.name = value.get("name", "Part %d" % (model.parts.size() + 1))
+		var steps := _steps(value, "glb")
+		if steps.is_empty():
+			return "Part %s needs a GLB or a folder with a finite solver time for every GLB." % part.name
+		part.step_times = steps[0]
+		part.step_files = steps[1]
+		all_times.append_array(part.step_times)
+		model.parts.append(part)
+	if model.parts.is_empty():
+		return "The model %s has no parts." % model.name
+	for value in entry.get("fields", []):
+		if not value is Dictionary:
+			return "Each field must be an object."
+		var field := Field.new()
+		error = _read_field(field, value, model.fields.size())
+		if not error.is_empty():
+			return error
+		var steps := _steps(value, "bin")
+		if steps.is_empty():
+			return "Field %s needs a brick or a folder with a finite solver time for every brick." % field.name
+		field.step_times = steps[0]
+		field.step_files = steps[1]
+		error = _field_sizes(field)
+		if not error.is_empty():
+			return error
+		all_times.append_array(field.step_times)
+		model.fields.append(field)
+	model.times = timeline(all_times)
+	for part in model.parts:
+		_map_frames(part, model.times)
+	for field in model.fields:
+		_map_frames(field, model.times)
+	_select_first(model, entry.get("field", ""), true)
+	return _read_labels(model, entry.get("labels", []))
+
+
+func _read_legacy(model: Model, manifest: Dictionary) -> String:
+	for entry in manifest.get("frames", []):
+		if not entry is Dictionary or not ScalarData.is_finite_number(entry.get("time")):
+			return "Frame %d needs a finite numeric solver time." % (model.times.size() + 1)
+		model.times.append(float(entry.time))
+	if model.times.is_empty():
+		return "The ZIP has no frames."
+	for entry in manifest.get("models", []):
+		if not entry is Dictionary or entry.has("parts") or not _string_keys(entry, ["name", "path"]).is_empty():
+			return "Each legacy model must name a GLB or frame folder."
+		var part := Part.new()
+		part.name = entry.get("name", "Part %d" % (model.parts.size() + 1))
+		var error := _legacy_steps(part, entry.get("path", ""), "glb", model.times)
+		if not error.is_empty():
+			return "Part %s: %s" % [part.name, error]
+		model.parts.append(part)
+	if model.parts.is_empty():
+		return "The ZIP has no models."
+	for entry in manifest.get("fields", []):
+		if not entry is Dictionary:
+			return "Each field must be an object."
+		var field := Field.new()
+		var error := _read_field(field, entry, model.fields.size())
+		if error.is_empty():
+			error = _legacy_steps(field, entry.get("path", ""), "bin", model.times)
+		if error.is_empty():
+			error = _field_sizes(field)
+		if not error.is_empty():
+			return "Field %s: %s" % [field.name, error]
+		model.fields.append(field)
+	_select_first(model, manifest.get("field", ""))
+	return ""
+
+
+func _read_field(field: Field, entry: Dictionary, index: int) -> String:
+	var error := _string_keys(entry, ["name", "quantity", "unit", "path"])
+	if not error.is_empty():
+		return "Field: " + error
+	field.name = entry.get("name", "Field %d" % (index + 1))
+	field.quantity = entry.get("quantity", "")
+	field.unit = entry.get("unit", "")
+	var span := ScalarData.parse_range(entry.get("range", [0.0, 1.0]))
+	if not span.error.is_empty():
+		return "Field %s: %s" % [field.name, span.error]
+	field.range = span.value
+	var cells := ScalarData.parse_cells(entry.get("cells"))
+	if not cells.error.is_empty():
+		return "Field %s: %s" % [field.name, cells.error]
+	field.cells = cells.value
+	var box := ScalarData.parse_box(entry.get("box", {}))
+	if not box.error.is_empty():
+		return "Field %s: %s" % [field.name, box.error]
+	field.box = box.value
+	field.size = box.size
+	field.axes = box.axes
+	return ""
+
+
+func _field_sizes(field: Field) -> String:
+	var expected := ScalarData.cell_count(field.cells)
+	for file in field.step_files:
+		if entries[file].size != expected:
+			return "%s has %d bytes; its grid requires exactly %d." % [file, entries[file].size, expected]
+	return ""
+
+
+static func _select_first(model: Model, name: String, last_match := false) -> void:
+	for index in model.fields.size():
+		if model.fields[index].name == name:
+			model.first_field = index
+			if not last_match:
+				break
+
+
+func _read_labels(model: Model, entries: Array) -> String:
+	for entry in entries:
+		if not entry is Dictionary or not entry.get("text") is String or entry.text.strip_edges().is_empty():
+			return "A point label needs text and a position."
+		var position := ScalarData.parse_vector(entry.get("position"), "Label position")
+		if not position.error.is_empty():
+			return position.error
+		var radius = entry.get("radius", 0.0)
+		if not ScalarData.is_finite_number(radius):
+			return "A label radius must be finite."
+		var label := PointLabel.new()
+		label.text = entry.text.strip_edges()
+		label.position = position.value
+		label.radius = maxf(float(radius), 0.0)
+		var span = entry.get("frames", [1, model.times.size()])
+		if not span is Array or span.is_empty() or span.size() > 2:
+			return "Label frames must be [n] or [first, last]."
+		for value in span:
+			if not ScalarData.is_finite_number(value) or value != floor(float(value)) or value < 1 or value > model.times.size():
+				return "Label frames must be whole model frame numbers in range."
+		label.frames = Vector2i(int(span[0]) - 1, int(span[-1]) - 1)
+		if label.frames.x > label.frames.y:
+			return "Label frames must be in order."
+		model.labels.append(label)
+	return ""
+
+
+func _legacy_steps(item, path: String, extension: String, frames: PackedFloat64Array) -> String:
+	if not is_file_path(path.trim_suffix("/")):
+		return "Invalid archive path."
+	if path.get_extension().to_lower() == extension and _file_exists(path):
+		item.step_files = PackedStringArray([path])
+		for frame in frames.size():
+			item.files.append(path)
+			item.frame_steps.append(0)
+		return ""
+	var files := _folder_files(path, extension)
+	if files.size() != frames.size():
+		return "The folder needs one file for each of the %d frames." % frames.size()
+	item.step_times = frames.duplicate()
+	item.step_files = files
+	item.files = files.duplicate()
+	for index in frames.size():
+		item.frame_steps.append(index)
+	return ""
+
+
+func _folder_files(path: String, extension: String) -> PackedStringArray:
+	var files := PackedStringArray()
+	var folder := path.trim_suffix("/") + "/"
+	for file in file_names:
+		if file.begins_with(folder) and file.get_base_dir() + "/" == folder and file.get_extension().to_lower() == extension:
+			files.append(file)
+	files.sort()
+	return files
+
+
+func _steps(entry: Dictionary, extension: String) -> Array:
+	var path: String = entry.get("path", "")
+	if not is_file_path(path.trim_suffix("/")) or not entry.get("times", []) is Array:
+		return []
+	var times := PackedFloat64Array()
+	for time in entry.get("times", []):
+		if not ScalarData.is_finite_number(time):
+			return []
+		times.append(float(time))
+	if path.get_extension().to_lower() == extension and _file_exists(path):
+		return [PackedFloat64Array(), PackedStringArray([path])]
+	var files := _folder_files(path, extension)
+	if files.is_empty() or times.size() != files.size():
+		return []
+	var order := range(files.size())
+	order.sort_custom(func(a: int, b: int) -> bool: return times[a] < times[b] if times[a] != times[b] else a < b)
+	var sorted_times := PackedFloat64Array()
+	var sorted_files := PackedStringArray()
+	for index in order:
+		sorted_times.append(times[index])
+		sorted_files.append(files[index])
+	return [sorted_times, sorted_files]
+
+
+static func _map_frames(item, frames: PackedFloat64Array) -> void:
+	for time in frames:
+		var index := 0 if item.step_times.is_empty() else step_at(item.step_times, time)
+		item.frame_steps.append(index)
+		item.files.append(item.step_files[index])
+
+
+## The held source step, independent of the displayed model time. Steps are 1-based.
+static func frame_source(field: Field, frame: int) -> Dictionary:
+	var step := field.frame_steps[frame]
+	var is_static := field.step_times.is_empty()
+	return {source_step = step + 1, source_time = null if is_static else field.step_times[step],
+		source_static = is_static, source_file = field.files[frame]}
 
 
 func _file_exists(path: String) -> bool:
@@ -222,21 +445,33 @@ func read_checked(file: String) -> Dictionary:
 	return {bytes = bytes, error = ""}
 
 
-## The file at each frame for [param path]: a file, the same at every
-## frame, or a folder of [param extension] files, one per frame in name order.
-## Empty if it's neither.
-func _per_frame(path: String, extension: String) -> PackedStringArray:
-	var files := PackedStringArray()
-	if path.get_extension().to_lower() == extension and _file_exists(path):
-		for index in times.size():
-			files.append(path)
-		return files
-	var folder := path.trim_suffix("/") + "/"
-	for file in file_names:
-		if file.begins_with(folder) and file.get_base_dir() + "/" == folder and file.get_extension().to_lower() == extension:
-			files.append(file)
-	files.sort()
-	return files if files.size() == times.size() else PackedStringArray()
+## Team timeline: sorted union, merging exporter rounding within same_time.
+## A model with only static sources has one displayed frame at zero.
+static func timeline(times: PackedFloat64Array) -> PackedFloat64Array:
+	var sorted := times.duplicate()
+	sorted.sort()
+	var frames := PackedFloat64Array()
+	for time in sorted:
+		if frames.is_empty() or not same_time(frames[-1], time):
+			frames.append(time)
+	if frames.is_empty():
+		frames.append(0.0)
+	return frames
+
+
+## Whether two solver times are one: exporters round them differently.
+static func same_time(a: float, b: float) -> bool:
+	return absf(a - b) <= maxf(absf(a), absf(b)) * 1e-6
+
+
+## The index of the step that shows at [param time], given the steps'
+## [param times] in order: the last one at or before it, or the first.
+static func step_at(times: PackedFloat64Array, time: float) -> int:
+	var step := 0
+	for index in times.size():
+		if times[index] <= time or same_time(times[index], time):
+			step = index
+	return step
 
 
 static func _string_keys(value: Dictionary, keys: Array) -> String:

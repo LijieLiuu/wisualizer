@@ -169,7 +169,7 @@ func _test_zip_export() -> void:
 	var rows := _rows(target)
 	if not _check(rows.size() == 7, "One row per field per frame, with quoted multiline names"):
 		return
-	_check(rows[0] == PackedStringArray(["field", "quantity", "unit", "frame", "solver_time", "source_file", "valid_count", "missing_count", "min", "max", "mean"]), "CSV schema identifies solver time without inventing seconds")
+	_check(rows[0] == PackedStringArray(Analysis.COLUMNS), "CSV schema identifies solver time without inventing seconds")
 	for index in 3:
 		_check(rows[index + 1][0] == NAME and rows[index + 1][1] == "Pressure, absolute" and rows[index + 1][2] == 'Pa "gauge"', "CSV preserves commas, quotes, newlines and units")
 		_check(rows[index + 1][3].to_int() == index + 1 and rows[index + 1][4].to_float() == TIMES[index], "Original frame order and full-precision irregular time are retained")
@@ -189,22 +189,28 @@ func _test_draft_export() -> void:
 	field.unit = "m/s"
 	field.range = Vector2(-2, 2)
 	field.cells = Vector3i(4, 1, 1)
-	field.bricks[0] = _write("draft/source.bin", PackedByteArray([0, 1, 128, 255]))
-	draft.fields.append(field)
-	draft.times = PackedFloat64Array([7.5, 9.0])
+	field.bricks[7.5] = _write("draft/source.bin", PackedByteArray([0, 1, 128, 255]))
+	var model := Draft.Model.new()
+	model.name = "Draft model"
+	model.fields.append(field)
+	var part := Draft.Part.new()
+	part.times = PackedFloat64Array([9.0])
+	part.files = PackedStringArray([_write("draft/shape.glb", _empty_glb())])
+	model.parts.append(part)
+	draft.models.append(model)
 	draft.notes = "Keep this draft unchanged"
 	var source_map := field.bricks.duplicate()
 	var target := _root.path_join("draft/statistics.csv")
 	var error: String = Analysis.new().export_draft(draft, target)
 	if _check(error.is_empty(), "Export unsaved fields without requiring a model or ZIP: " + error):
 		var rows := _rows(target)
-		if _check(rows.size() == 3, "Draft export includes its missing-data frame"):
+		if _check(rows.size() == 3, "Draft export includes the held field at another part’s time"):
 			_check(rows[1][0] == field.name and rows[1][4].to_float() == 7.5 and rows[1][10].to_float() == 0.0, "Unsaved metadata and values are exported directly")
-			_check(rows[2][5] == "" and rows[2][6].to_int() == 0 and rows[2][7].to_int() == 4 and rows[2][10] == "", "Missing draft bricks are explicit no-data frames")
+			_check(rows[2][5] == field.bricks[7.5] and rows[2][6].to_int() == 3 and rows[2][7].to_int() == 1 and rows[2][10].to_float() == 0.0 and rows[2][15].to_float() == 7.5, "Draft export preserves team held-step source provenance")
 	_check(field.bricks == source_map and draft.notes == "Keep this draft unchanged" and draft.source_zip_path().is_empty(), "Export does not save or mutate the draft")
-	var bytes := FileAccess.get_file_as_bytes(field.bricks[0])
-	_check(not Analysis.new().export_draft(draft, field.bricks[0]).is_empty(), "Cannot replace a draft's raw field source")
-	_check(FileAccess.get_file_as_bytes(field.bricks[0]) == bytes, "Field source bytes remain intact")
+	var bytes := FileAccess.get_file_as_bytes(field.bricks[7.5])
+	_check(not Analysis.new().export_draft(draft, field.bricks[7.5]).is_empty(), "Cannot replace a draft's raw field source")
+	_check(FileAccess.get_file_as_bytes(field.bricks[7.5]) == bytes, "Field source bytes remain intact")
 	var supporting := _write("draft/extra.txt", "Source attachment".to_utf8_buffer())
 	draft.add_attachments(PackedStringArray([supporting]))
 	_check(not Analysis.new().export_draft(draft, supporting).is_empty(), "Cannot replace an unrelated supporting source file")

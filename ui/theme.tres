@@ -523,6 +523,58 @@ corner_radius_bottom_left = 10
 corner_detail = 8
 anti_aliasing_size = 0.5
 
+[sub_resource type="StyleBoxFlat" id="SegmentedTrack"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(1, 1, 1, 0.08)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="SegmentNormal"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="SegmentHover"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.1)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
+[sub_resource type="StyleBoxFlat" id="SegmentPressed"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+bg_color = Color(1, 1, 1, 0.24)
+corner_radius_top_left = 999
+corner_radius_top_right = 999
+corner_radius_bottom_right = 999
+corner_radius_bottom_left = 999
+corner_detail = 16
+anti_aliasing_size = 0.5
+
 [sub_resource type="StyleBoxEmpty" id="Focus"]
 
 [resource]
@@ -693,3 +745,10 @@ TitleField/styles/focus = SubResource("FieldFocus")
 RichTextLabel/fonts/bold_font = SubResource("Bold")
 RichTextLabel/fonts/bold_italics_font = SubResource("BoldItalic")
 RichTextLabel/fonts/italics_font = SubResource("Italic")
+Segmented/base_type = &"PanelContainer"
+Segmented/styles/panel = SubResource("SegmentedTrack")
+Segment/base_type = &"Button"
+Segment/styles/hover = SubResource("SegmentHover")
+Segment/styles/hover_pressed = SubResource("SegmentPressed")
+Segment/styles/normal = SubResource("SegmentNormal")
+Segment/styles/pressed = SubResource("SegmentPressed")

@@ -57,6 +57,7 @@ func _initialize() -> void:
 	if not _root.is_absolute_path():
 		_root = "/tmp/" + _root
 	DirAccess.make_dir_recursive_absolute(_root)
+	_test_models()
 	_test_analysis()
 	_test_three_dimensional_grid()
 	_test_sessions()
@@ -149,7 +150,7 @@ func _test_analysis() -> void:
 		_check(row.a == 10.0 and row.b == 20.0 and row.delta == 10.0 and row.source_file == "temperature.bin", "A constant brick is sampled at every recorded frame")
 	var meta := _open(path)
 	var display_field: Meta.Field = meta.fields[0]
-	_check(display_field.format(0.0000001).begins_with("1e-07"), "Small nonzero scalar formatting uses supported scientific notation")
+	_check(display_field.format(0.0000001).begins_with("1.00e-07"), "Small nonzero scalar formatting uses supported scientific notation")
 	var identity: Dictionary = History.snapshot(meta, 0).identity
 	meta.close()
 	for points in [{}, {2: Vector3.ZERO}, {"0": Vector3.ZERO}, {0: Vector3(1, 0, 0)}, {0: Vector3(-0.1, 0, 0)}, {0: Vector3(NAN, 0, 0)}, {0: [0, 0, 0]}]:
@@ -377,3 +378,63 @@ func _remove_tree(path: String) -> void:
 	for name in DirAccess.get_files_at(path):
 		DirAccess.remove_absolute(path.path_join(name))
 	DirAccess.remove_absolute(path)
+
+
+func _test_models() -> void:
+	var times := [-1, 0, 1, 2, 3]
+	var manifest := {title = "Multiple models", models = [
+		{name = "Same model", parts = [{name = "Part", path = "team/shape", times = times}], fields = [
+			{name = "Same field", quantity = "Pressure", unit = "Pa", range = [-2, 2], cells = [2, 1, 1], path = "team/pressure", times = [0, 2]},
+			{name = "Same field", range = [10, 20], cells = [2, 1, 1], path = "temperature.bin"}],
+			labels = [{text = "Point", position = [0, 0, 0], frames = [2, 4]}]},
+		{name = "Same model", parts = [{path = "shape.glb"}], fields = [
+			{name = "Same field", quantity = "Pressure", unit = "Pa", range = [-2, 2], cells = [2, 1, 1], path = "team/pressure", times = [100, 101]}]},
+		{name = "Static model", parts = [{path = "shape.glb"}], fields = [
+			{name = "Constant", range = [10, 20], cells = [2, 1, 1], path = "temperature.bin"}]}]}
+	var changed := {"meta.json": JSON.stringify(manifest, "", true, true).to_utf8_buffer(),
+		"team/pressure/01.bin": PackedByteArray([1, 255]), "team/pressure/02.bin": PackedByteArray([255, 1])}
+	for frame in times.size():
+		changed["team/shape/%02d.glb" % frame] = PackedByteArray([1])
+	var path := _fixture("models/source.zip", changed)
+	var meta := _open(path)
+	_check(not meta.legacy and meta.models.size() == 3, "Team archive retains separate models")
+	_check(meta.models[0].times == PackedFloat64Array(times) and meta.models[1].times == PackedFloat64Array([100, 101]), "Each model keeps its own team union timeline")
+	_check(meta.models[0].fields[0].frame_steps == PackedInt32Array([0, 0, 0, 1, 1]), "Team sample-and-hold includes before-first and after-last frames")
+	_check(meta.models[0].labels[0].frames == Vector2i(1, 3), "Team point labels retain their model frame range")
+	var first := History.snapshot(meta, 0, 0)
+	var other := History.snapshot(meta, 0, 1)
+	var duplicate := History.snapshot(meta, 1, 0)
+	_check(first.identity.digest != other.identity.digest and first.identity.digest != duplicate.identity.digest, "Duplicate model/field labels cannot share identities")
+	var history := History.new()
+	var result := history.analyze(path, 0, POINTS, first.identity, Callable(), Callable(), 0)
+	if _check(result.error.is_empty() and result.rows.size() == 5, "Analyze selected model with held field steps"):
+		_check(result.rows[2].solver_time == 1 and result.rows[2].source_time == 0 and result.rows[2].source_step == 1 and result.rows[2].a == -2.0, "Displayed model time is distinct from held source time/value")
+		_check(result.rows[0].solver_time == -1 and result.rows[0].source_time == 0, "Before-first display names the actual first source time")
+		_check(result.rows[4].solver_time == 3 and result.rows[4].source_time == 2 and result.rows[4].a == 2.0, "After-last display retains the actual last source step")
+	var second := history.analyze(path, 0, POINTS, other.identity, Callable(), Callable(), 1)
+	_check(second.error.is_empty() and second.model_index == 1 and second.rows.size() == 2 and second.rows[0].solver_time == 100, "Second model analysis never uses the first model's timeline")
+	_check(not history.analyze(path, 0, POINTS, first.identity, Callable(), Callable(), 1).error.is_empty(), "Cross-model identity is rejected despite matching names")
+	var captured := History.snapshot(meta, 0, 2)
+	var static_result := history.analyze(path, 0, POINTS, captured.identity, Callable(), Callable(), 2)
+	_check(static_result.error.is_empty() and static_result.rows.size() == 1 and static_result.rows[0].source_static and static_result.rows[0].source_time == null, "Static source has no invented solver timestamp")
+	var session := _root.path_join("models/points.json")
+	_check(history.save_session(meta, 0, POINTS, path, session, Callable(), 1).is_empty(), "Save model-scoped positions")
+	var restored := history.restore_session(session, meta, path)
+	_check(restored.error.is_empty() and restored.model_index == 1 and restored.field_index == 0, "Session restores exact model and field indices")
+	var stored: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(session))
+	_check(stored.version == 2 and stored.identity.model_index == 1, "Team positions use model-bound session version 2")
+	stored.model_index = 0
+	_write(session, JSON.stringify(stored).to_utf8_buffer())
+	_check(not history.restore_session(session, meta, path).error.is_empty(), "Changing only session model index invalidates its identity")
+	var target := _root.path_join("models/history.csv")
+	_check(history.export_csv(result, target).is_empty(), "Export model-scoped probe history")
+	var rows := _rows(target)
+	var columns: PackedStringArray = rows[0]
+	_check(rows[3][columns.find("model_index")] == "0" and rows[3][columns.find("field_index")] == "0" and rows[3][columns.find("source_time")].to_float() == 0.0 and rows[3][columns.find("solver_time")].to_float() == 1.0, "Probe CSV identifies model/field and held source time separately")
+	_check(history.export_zip(path, target).is_empty(), "Statistics export every model")
+	rows = _rows(target)
+	columns = rows[0]
+	_check(rows.size() == 14, "Statistics counts each model's own frames and fields")
+	_check(rows[11][columns.find("model_index")] == "1" and rows[11][columns.find("solver_time")].to_float() == 100.0, "Statistics never leak first-model times into a duplicate model label")
+	_check(rows[-1][columns.find("source_static")] == "true" and rows[-1][columns.find("source_time")] == "", "Static statistics source timestamp stays blank")
+	meta.close()

@@ -12,6 +12,9 @@ extends Node3D
 ## Emitted when the volume's physical size changes, such as after the person
 ## resizes it.
 signal resized(size: Vector3)
+## Emitted when the volume's world moves around the person or back into the
+## volume, also when the person leaves the immersive space themselves.
+signal immersive_changed(immersive: bool)
 
 ## Which axis of [member window_size] [member size] spans.
 enum KeepAspect {
@@ -63,6 +66,8 @@ func _enter_tree() -> void:
 			_:
 				_backend = DesktopVolume.new(self)
 		_backend.resized.connect(resized.emit)
+		if _backend.has_signal(&"immersive_changed"):
+			_backend.immersive_changed.connect(immersive_changed.emit)
 	_update()
 
 
@@ -72,13 +77,64 @@ func get_measured_size() -> Vector3:
 	return _backend.get_measured_size() if _backend != null else Vector3.ZERO
 
 
+## The tracked hands that can reach into this volume: on visionOS, the
+## person's hands while the volume is immersive; none elsewhere, for now.
+## [method get_hand_joint] places their joints in this Window's world.
+func get_hands() -> Array[XRHandTracker]:
+	if _backend != null and _backend.has_method(&"get_hands"):
+		return _backend.get_hands()
+	return []
+
+
+## Where [param joint] of [param hand], one of [method get_hands], is, in
+## this Window's world.
+func get_hand_joint(hand: XRHandTracker, joint: XRHandTracker.HandJoint) -> Transform3D:
+	return _backend.get_hand_joint(hand, joint)
+
+
+## Validated joint snapshots are in this Window's world, already scaled.
+func get_hand_snapshot(hand: XRHandTracker) -> Dictionary:
+	if _backend != null and _backend.has_method("get_hand_snapshot"):
+		return _backend.get_hand_snapshot(hand)
+	return {tracked = false, joints = {}, reason = "Hand tracking is unavailable."}
+
+
+func has_safe_hand_tracking() -> bool:
+	return _backend != null and _backend.has_method("has_safe_hand_tracking") and _backend.has_safe_hand_tracking()
+
+
+func is_hand_tracking_presented() -> bool:
+	return _backend != null and _backend.has_method("is_hand_tracking_presented") and _backend.is_hand_tracking_presented()
+
+
+## Whether this platform can show the volume's world around the person: on
+## visionOS, as the app's immersive space.
+func can_be_immersive() -> bool:
+	return _backend != null and _backend.has_method(&"set_immersive")
+
+
+## Whether the volume's world is shown around the person.
+func is_immersive() -> bool:
+	return can_be_immersive() and _backend.is_immersive()
+
+
+## Shows the volume's world around the person, or back in the volume. The
+## box keeps its physical size and is placed in front of the person. The
+## Window reopens either way, with a new ID.
+func set_immersive(immersive: bool) -> void:
+	if can_be_immersive():
+		_backend.set_immersive(immersive)
+
+
 ## The tracked controllers that can reach into this volume, one per hand,
 ## following their "aim" pose: spatial controllers on visionOS, the headset's
 ## controllers in XR, none on a desktop. Their global transforms are in this
 ## Window's world, so [method Node3D.to_local] on the volume's content gives
 ## where they point within it.
 func get_controllers() -> Array[XRController3D]:
-	return _backend.get_controllers() if _backend != null else []
+	if _backend != null:
+		return _backend.get_controllers()
+	return []
 
 
 ## The size of the visible box in world units, following the volume's

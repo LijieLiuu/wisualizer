@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_scalars()
 	_bovs()
 	_manifests()
+	_model_manifests()
 	for name in DirAccess.get_files_at(_directory):
 		DirAccess.remove_absolute(_directory.path_join(name))
 	DirAccess.remove_absolute(_directory)
@@ -212,3 +213,23 @@ func _write(path: String, bytes: PackedByteArray) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_buffer(bytes)
 	file.close()
+
+
+func _model_manifests() -> void:
+	_check(Meta.timeline(PackedFloat64Array([2.0, 1.0000001, 1.0])) == PackedFloat64Array([1.0, 2.0]), "Team timeline keeps its exporter-rounding tolerance")
+	_check(Meta.step_at(PackedFloat64Array([1.0, 2.0]), 1.9999999) == 1, "Team held-step lookup uses the same rounding tolerance")
+	var entry := {name = "Model", parts = [{name = "Part", path = "model.glb"}], fields = _manifest().fields,
+		labels = [{text = "Point", position = [1, 2, 3], frames = [1]}]}
+	var manifest := {title = "Team archive", models = [entry]}
+	var meta := Meta.new()
+	_check(meta.open(_archive(manifest)).is_empty(), "Team model archive opens with original schema")
+	_check(not meta.legacy and meta.models.size() == 1 and meta.models[0].times == PackedFloat64Array([0.0]), "Static team model has a single displayed frame")
+	_check(meta.models[0].fields[0].step_times.is_empty() and Meta.frame_source(meta.models[0].fields[0], 0).source_time == null, "Static scalar does not acquire a synthetic source timestamp")
+	meta.close()
+	for change in [{parts = false}, {parts = [false]}, {parts = [{path = 1}]}, {parts = [{path = "model.glb", times = [true]}]}, {fields = false}, {fields = [null]}, {labels = false}, {labels = [false]}, {labels = [{text = "A", position = [0, 1]}]}, {labels = [{text = "A", position = [0, 0, 0], frames = [true]}]}, {labels = [{text = "A", position = [0, 0, 0], frames = [0]}]}, {labels = [{text = "A", position = [0, 0, 0], radius = "1"}]}]:
+		var malformed := entry.duplicate(true)
+		malformed.merge(change, true)
+		_reject_manifest({models = [malformed]}, "Team nested schema rejects malformed values without a runtime exception: " + str(change))
+	var bad_field := entry.duplicate(true)
+	bad_field.fields[0].times = ["0"]
+	_reject_manifest({models = [bad_field]}, "Team source times must be finite numbers even when supplied on a static path")

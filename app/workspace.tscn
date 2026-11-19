@@ -3,8 +3,6 @@
 [ext_resource type="Script" path="res://app/workspace.gd" id="1"]
 [ext_resource type="Texture2D" path="res://app/icons/delete.svg" id="2"]
 
-[sub_resource type="ButtonGroup" id="Sections"]
-
 [node name="Workspace" type="Window"]
 title = "Workspace"
 size = Vector2i(2240, 1440)
@@ -32,7 +30,7 @@ theme_override_constants/separation = 4
 [node name="Title" type="LineEdit" parent="Root/Sidebar/Column"]
 unique_name_in_owner = true
 layout_mode = 2
-tooltip_text = "Shown over the volume"
+tooltip_text = "The ZIP's title, shown in each volume's title"
 theme_type_variation = &"TitleField"
 placeholder_text = "Title"
 
@@ -48,73 +46,19 @@ text = "file.zip"
 text_overrun_behavior = 3
 
 [node name="Gap" type="Control" parent="Root/Sidebar/Column"]
-custom_minimum_size = Vector2(0, 16)
+custom_minimum_size = Vector2(0, 12)
 layout_mode = 2
 
-[node name="FramesSection" type="Button" parent="Root/Sidebar/Column"]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-tooltip_text = "The timeline: each frame and its solver time"
-theme_type_variation = &"SidebarRow"
-toggle_mode = true
-button_pressed = true
-button_group = SubResource("Sections")
-text = "Frames"
-alignment = 0
-
-[node name="ModelsSection" type="Button" parent="Root/Sidebar/Column"]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-tooltip_text = "The GLBs shown in the volume"
-theme_type_variation = &"SidebarRow"
-toggle_mode = true
-button_group = SubResource("Sections")
-text = "Models"
-alignment = 0
-
-[node name="FieldsSection" type="Button" parent="Root/Sidebar/Column"]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-tooltip_text = "The fields controllers feel and the debug view shows"
-theme_type_variation = &"SidebarRow"
-toggle_mode = true
-button_group = SubResource("Sections")
-text = "Fields"
-alignment = 0
-
-[node name="ImagesSection" type="Button" parent="Root/Sidebar/Column"]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-tooltip_text = "The images the notes show"
-theme_type_variation = &"SidebarRow"
-toggle_mode = true
-button_group = SubResource("Sections")
-text = "Images"
-alignment = 0
-
-[node name="FilesSection" type="Button" parent="Root/Sidebar/Column"]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-tooltip_text = "Source files included with the ZIP"
-theme_type_variation = &"SidebarRow"
-toggle_mode = true
-button_group = SubResource("Sections")
-text = "Files"
-alignment = 0
-
-[node name="NotesSection" type="Button" parent="Root/Sidebar/Column"]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-tooltip_text = "The notes shown beside the volume"
-theme_type_variation = &"SidebarRow"
-toggle_mode = true
-button_group = SubResource("Sections")
-text = "Notes"
-alignment = 0
-
-[node name="Spacer" type="Control" parent="Root/Sidebar/Column"]
+[node name="NavScroll" type="ScrollContainer" parent="Root/Sidebar/Column"]
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Nav" type="VBoxContainer" parent="Root/Sidebar/Column/NavScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
 
 [node name="Status" type="Label" parent="Root/Sidebar/Column"]
 unique_name_in_owner = true
@@ -156,6 +100,85 @@ theme_override_constants/margin_bottom = 24
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="Model" type="VBoxContainer" parent="Root/Content/Pages"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="Label" parent="Root/Content/Pages/Model"]
+layout_mode = 2
+theme_type_variation = &"Header"
+text = "Model"
+
+[node name="Caption" type="Label" parent="Root/Content/Pages/Model"]
+layout_mode = 2
+theme_type_variation = &"Caption"
+text = "Each model opens in a volume of its own, side by side with the others, and they all play together. Its parts, fields and labels share its units; its timeline is the solver times they have."
+autowrap_mode = 3
+
+[node name="Gap" type="Control" parent="Root/Content/Pages/Model"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="Card" type="PanelContainer" parent="Root/Content/Pages/Model"]
+layout_mode = 2
+theme_type_variation = &"Card"
+
+[node name="Column" type="VBoxContainer" parent="Root/Content/Pages/Model/Card"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Form" type="GridContainer" parent="Root/Content/Pages/Model/Card/Column"]
+layout_mode = 2
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="NameLabel" type="Label" parent="Root/Content/Pages/Model/Card/Column/Form"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"FormLabel"
+text = "Name"
+
+[node name="ModelName" type="LineEdit" parent="Root/Content/Pages/Model/Card/Column/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Shown in the model's volume title when there are several"
+
+[node name="ContentsLabel" type="Label" parent="Root/Content/Pages/Model/Card/Column/Form"]
+layout_mode = 2
+theme_type_variation = &"FormLabel"
+text = "Contents"
+
+[node name="ModelSummary" type="Label" parent="Root/Content/Pages/Model/Card/Column/Form"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"Caption"
+autowrap_mode = 3
+
+[node name="Toolbar" type="HBoxContainer" parent="Root/Content/Pages/Model/Card/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ModelUp" type="Button" parent="Root/Content/Pages/Model/Card/Column/Toolbar"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+tooltip_text = "Open this model's volume before the one above it"
+text = "Move up"
+
+[node name="ModelDown" type="Button" parent="Root/Content/Pages/Model/Card/Column/Toolbar"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+tooltip_text = "Open this model's volume after the one below it"
+text = "Move down"
+
+[node name="RemoveModel" type="Button" parent="Root/Content/Pages/Model/Card/Column/Toolbar"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+tooltip_text = "Remove this model, with its parts, fields and labels"
+text = "Remove model"
+
 [node name="Frames" type="VBoxContainer" parent="Root/Content/Pages"]
 layout_mode = 2
 theme_override_constants/separation = 6
@@ -163,7 +186,7 @@ theme_override_constants/separation = 6
 [node name="Header" type="Label" parent="Root/Content/Pages/Frames"]
 layout_mode = 2
 theme_type_variation = &"Header"
-text = "Frames"
+text = "Timeline"
 
 [node name="FramesCaption" type="Label" parent="Root/Content/Pages/Frames"]
 unique_name_in_owner = true
@@ -184,109 +207,93 @@ theme_type_variation = &"Card"
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Toolbar" type="HBoxContainer" parent="Root/Content/Pages/Frames/Card/Column"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="AddFrame" type="Button" parent="Root/Content/Pages/Frames/Card/Column/Toolbar"]
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-tooltip_text = "Add a frame after the last"
-text = "Add frame"
-
-[node name="RemoveFrame" type="Button" parent="Root/Content/Pages/Frames/Card/Column/Toolbar"]
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-tooltip_text = "Remove the selected frame, with its GLBs and bricks"
-text = "Remove"
-
 [node name="FrameList" type="Tree" parent="Root/Content/Pages/Frames/Card/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-columns = 2
+columns = 3
 column_titles_visible = true
 hide_root = true
 
-[node name="Models" type="VBoxContainer" parent="Root/Content/Pages"]
+[node name="Parts" type="VBoxContainer" parent="Root/Content/Pages"]
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Header" type="Label" parent="Root/Content/Pages/Models"]
+[node name="Header" type="Label" parent="Root/Content/Pages/Parts"]
 layout_mode = 2
 theme_type_variation = &"Header"
-text = "Models"
+text = "Parts"
 
-[node name="Caption" type="Label" parent="Root/Content/Pages/Models"]
+[node name="Caption" type="Label" parent="Root/Content/Pages/Parts"]
 layout_mode = 2
 theme_type_variation = &"Caption"
-text = "Pick all of a model's GLBs at once: GLBs named alike but for a number, as EnSight exports one per time step, become one model that changes with the frames. A GLB on its own is shown at every frame. Models are listed, and switched, in this order."
+text = "The model's geometry, all shown together, each part with a switch. Pick all of a part's GLBs at once: GLBs named alike but for a number, as EnSight exports one per time step, become one part that changes at their solver times. A GLB on its own is shown at every frame."
 autowrap_mode = 3
 
-[node name="Gap" type="Control" parent="Root/Content/Pages/Models"]
+[node name="Gap" type="Control" parent="Root/Content/Pages/Parts"]
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2
 
-[node name="Row" type="HBoxContainer" parent="Root/Content/Pages/Models"]
+[node name="Row" type="HBoxContainer" parent="Root/Content/Pages/Parts"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 16
 
-[node name="ListCard" type="PanelContainer" parent="Root/Content/Pages/Models/Row"]
+[node name="ListCard" type="PanelContainer" parent="Root/Content/Pages/Parts/Row"]
 custom_minimum_size = Vector2(320, 0)
 layout_mode = 2
 theme_type_variation = &"Card"
 
-[node name="Column" type="VBoxContainer" parent="Root/Content/Pages/Models/Row/ListCard"]
+[node name="Column" type="VBoxContainer" parent="Root/Content/Pages/Parts/Row/ListCard"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Toolbar" type="HBoxContainer" parent="Root/Content/Pages/Models/Row/ListCard/Column"]
+[node name="Toolbar" type="HBoxContainer" parent="Root/Content/Pages/Parts/Row/ListCard/Column"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="ImportGLB" type="Button" parent="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar"]
+[node name="ImportGLB" type="Button" parent="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar"]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
-tooltip_text = "Pick GLBs: one per time step for a model that changes, or one for a model that doesn't"
+tooltip_text = "Pick GLBs: one per time step for a part that changes, or one for a part that doesn't"
 size_flags_horizontal = 3
 text = "Import GLBs…"
 
-[node name="ModelUp" type="Button" parent="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar"]
+[node name="PartUp" type="Button" parent="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar"]
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 tooltip_text = "Move up"
 theme_type_variation = &"IconButton"
 text = "↑"
 
-[node name="ModelDown" type="Button" parent="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar"]
+[node name="PartDown" type="Button" parent="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar"]
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
 tooltip_text = "Move down"
 theme_type_variation = &"IconButton"
 text = "↓"
 
-[node name="RemoveModel" type="Button" parent="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar"]
+[node name="RemovePart" type="Button" parent="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar"]
 custom_minimum_size = Vector2(36, 36)
 layout_mode = 2
-tooltip_text = "Remove the selected model"
+tooltip_text = "Remove the selected part"
 theme_type_variation = &"IconButton"
 icon = ExtResource("2")
 icon_alignment = 1
 expand_icon = true
 
-[node name="ModelList" type="ItemList" parent="Root/Content/Pages/Models/Row/ListCard/Column"]
+[node name="PartList" type="ItemList" parent="Root/Content/Pages/Parts/Row/ListCard/Column"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="FormCard" type="PanelContainer" parent="Root/Content/Pages/Models/Row"]
+[node name="FormCard" type="PanelContainer" parent="Root/Content/Pages/Parts/Row"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"Card"
 
-[node name="ModelForm" type="GridContainer" parent="Root/Content/Pages/Models/Row/FormCard"]
+[node name="PartForm" type="GridContainer" parent="Root/Content/Pages/Parts/Row/FormCard"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 0
@@ -294,23 +301,23 @@ theme_override_constants/h_separation = 16
 theme_override_constants/v_separation = 12
 columns = 2
 
-[node name="NameLabel" type="Label" parent="Root/Content/Pages/Models/Row/FormCard/ModelForm"]
+[node name="NameLabel" type="Label" parent="Root/Content/Pages/Parts/Row/FormCard/PartForm"]
 custom_minimum_size = Vector2(90, 0)
 layout_mode = 2
 theme_type_variation = &"FormLabel"
 text = "Name"
 
-[node name="ModelName" type="LineEdit" parent="Root/Content/Pages/Models/Row/FormCard/ModelForm"]
+[node name="PartName" type="LineEdit" parent="Root/Content/Pages/Parts/Row/FormCard/PartForm"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="InfoLabel" type="Label" parent="Root/Content/Pages/Models/Row/FormCard/ModelForm"]
+[node name="InfoLabel" type="Label" parent="Root/Content/Pages/Parts/Row/FormCard/PartForm"]
 layout_mode = 2
 theme_type_variation = &"FormLabel"
 text = "GLBs"
 
-[node name="ModelInfo" type="Label" parent="Root/Content/Pages/Models/Row/FormCard/ModelForm"]
+[node name="PartInfo" type="Label" parent="Root/Content/Pages/Parts/Row/FormCard/PartForm"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -330,7 +337,7 @@ text = "Fields"
 [node name="Caption" type="Label" parent="Root/Content/Pages/Fields"]
 layout_mode = 2
 theme_type_variation = &"Caption"
-text = "Pick the brick headers EnSight writes beside each brick, such as B_Vector_meta0001; each variable becomes a field. Controllers feel the field, and the debug view shows it."
+text = "Pick the brick headers EnSight writes beside each brick, such as B_Vector_meta0001; each variable becomes one of the model's fields, and each brick goes in at its solver time, so time steps can be imported in any order, a few at a time. Controllers and hands feel the field, and the debug view shows it."
 autowrap_mode = 3
 
 [node name="ExportStatistics" type="Button" parent="Root/Content/Pages/Fields"]
@@ -446,7 +453,7 @@ placeholder_text = "min, max"
 
 [node name="OriginLabel" type="Label" parent="Root/Content/Pages/Fields/Row/FormCard/FieldForm"]
 layout_mode = 2
-tooltip_text = "The corner of the field's box, in the models' units"
+tooltip_text = "The corner of the field's box, in the model's units"
 mouse_filter = 1
 theme_type_variation = &"FormLabel"
 text = "Origin"
@@ -459,7 +466,7 @@ placeholder_text = "x, y, z"
 
 [node name="SizeLabel" type="Label" parent="Root/Content/Pages/Fields/Row/FormCard/FieldForm"]
 layout_mode = 2
-tooltip_text = "The extent of the field's box, in the models' units"
+tooltip_text = "The extent of the field's box, in the model's units"
 mouse_filter = 1
 theme_type_variation = &"FormLabel"
 text = "Size"
@@ -477,8 +484,8 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 size_flags_horizontal = 0
-tooltip_text = "Scale the box about its center to span the models: EnSight doesn't say what scale its bricks are at"
-text = "Fit to models"
+tooltip_text = "Scale the box about its center to span the model's parts: EnSight doesn't say what scale its bricks are at"
+text = "Fit to parts"
 
 [node name="FirstLabel" type="Label" parent="Root/Content/Pages/Fields/Row/FormCard/FieldForm"]
 layout_mode = 2
@@ -497,6 +504,144 @@ theme_type_variation = &"FormLabel"
 text = "Bricks"
 
 [node name="FieldInfo" type="Label" parent="Root/Content/Pages/Fields/Row/FormCard/FieldForm"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"Caption"
+autowrap_mode = 3
+
+[node name="Labels" type="VBoxContainer" parent="Root/Content/Pages"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="Label" parent="Root/Content/Pages/Labels"]
+layout_mode = 2
+theme_type_variation = &"Header"
+text = "Labels"
+
+[node name="Caption" type="Label" parent="Root/Content/Pages/Labels"]
+layout_mode = 2
+theme_type_variation = &"Caption"
+text = "Text that appears at a point in the volume while a controller is near it, or while the pointer is over the point on a desktop. A dot marks each point."
+autowrap_mode = 3
+
+[node name="Gap" type="Control" parent="Root/Content/Pages/Labels"]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="Row" type="HBoxContainer" parent="Root/Content/Pages/Labels"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="ListCard" type="PanelContainer" parent="Root/Content/Pages/Labels/Row"]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+theme_type_variation = &"Card"
+
+[node name="Column" type="VBoxContainer" parent="Root/Content/Pages/Labels/Row/ListCard"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Toolbar" type="HBoxContainer" parent="Root/Content/Pages/Labels/Row/ListCard/Column"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="AddLabel" type="Button" parent="Root/Content/Pages/Labels/Row/ListCard/Column/Toolbar"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+tooltip_text = "Add a label at the parts' center"
+size_flags_horizontal = 3
+text = "Add label"
+
+[node name="RemoveLabel" type="Button" parent="Root/Content/Pages/Labels/Row/ListCard/Column/Toolbar"]
+custom_minimum_size = Vector2(36, 36)
+layout_mode = 2
+tooltip_text = "Remove the selected label"
+theme_type_variation = &"IconButton"
+icon = ExtResource("2")
+icon_alignment = 1
+expand_icon = true
+
+[node name="LabelList" type="ItemList" parent="Root/Content/Pages/Labels/Row/ListCard/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="FormCard" type="PanelContainer" parent="Root/Content/Pages/Labels/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"Card"
+
+[node name="LabelForm" type="GridContainer" parent="Root/Content/Pages/Labels/Row/FormCard"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 12
+columns = 2
+
+[node name="TextLabel" type="Label" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_type_variation = &"FormLabel"
+text = "Text"
+
+[node name="LabelText" type="TextEdit" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "What the label says; it wraps, and a new line starts a new one"
+wrap_mode = 1
+
+[node name="PositionLabel" type="Label" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+layout_mode = 2
+tooltip_text = "Where the label points, in the model's units"
+mouse_filter = 1
+theme_type_variation = &"FormLabel"
+text = "Point"
+
+[node name="LabelPosition" type="LineEdit" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "x, y, z"
+
+[node name="RadiusLabel" type="Label" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+layout_mode = 2
+tooltip_text = "How near a controller comes for the text to show, in the model's units"
+mouse_filter = 1
+theme_type_variation = &"FormLabel"
+text = "Radius"
+
+[node name="LabelRadius" type="LineEdit" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "3 cm in the volume"
+
+[node name="FramesLabel" type="Label" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+layout_mode = 2
+tooltip_text = "The first and last frames of the model's timeline the label shows at"
+mouse_filter = 1
+theme_type_variation = &"FormLabel"
+text = "Frames"
+
+[node name="LabelFrames" type="LineEdit" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "All; or first, last, such as 3, 8"
+
+[node name="BoundsLabel" type="Label" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
+layout_mode = 2
+theme_type_variation = &"FormLabel"
+text = "Parts"
+
+[node name="LabelBounds" type="Label" parent="Root/Content/Pages/Labels/Row/FormCard/LabelForm"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -667,7 +812,7 @@ text = "Notes"
 [node name="Caption" type="Label" parent="Root/Content/Pages/Notes"]
 layout_mode = 2
 theme_type_variation = &"Caption"
-text = "Godot BBCode on the left, as it will look beside the volume on the right: [b]bold[/b], [img]images/flow.png[/img], and [url=frame:9]frame 9[/url], which pauses on frame 9."
+text = "Godot BBCode on the left, as it will look beside the volume on the right: [b]bold[/b], [img]images/flow.png[/img], and [url=frame:9]frame 9[/url], which pauses the first model on frame 9."
 autowrap_mode = 3
 
 [node name="ImportNotes" type="Button" parent="Root/Content/Pages/Notes"]
@@ -771,24 +916,15 @@ use_native_dialog = true
 
 [connection signal="close_requested" from="." to="." method="close"]
 [connection signal="text_changed" from="Root/Sidebar/Column/Title" to="." method="edit_title"]
-[connection signal="pressed" from="Root/Sidebar/Column/FramesSection" to="." method="show_page" binds= ["Frames"]]
-[connection signal="pressed" from="Root/Sidebar/Column/ModelsSection" to="." method="show_page" binds= ["Models"]]
-[connection signal="pressed" from="Root/Sidebar/Column/FieldsSection" to="." method="show_page" binds= ["Fields"]]
-[connection signal="pressed" from="Root/Sidebar/Column/ImagesSection" to="." method="show_page" binds= ["Images"]]
-[connection signal="pressed" from="Root/Sidebar/Column/FilesSection" to="." method="show_page" binds= ["Files"]]
-[connection signal="pressed" from="Root/Sidebar/Column/NotesSection" to="." method="show_page" binds= ["Notes"]]
 [connection signal="pressed" from="Root/Sidebar/Column/Save" to="." method="save"]
 [connection signal="pressed" from="Root/Sidebar/Column/SaveAs" to="." method="ask_save_as"]
 [connection signal="pressed" from="Root/Sidebar/Column/Preview" to="." method="preview"]
-[connection signal="pressed" from="Root/Content/Pages/Frames/Card/Column/Toolbar/AddFrame" to="." method="add_frame"]
-[connection signal="pressed" from="Root/Content/Pages/Frames/Card/Column/Toolbar/RemoveFrame" to="." method="remove_frame"]
-[connection signal="item_edited" from="Root/Content/Pages/Frames/Card/Column/FrameList" to="." method="edit_frame"]
-[connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/ImportGLB" to="." method="ask_import" binds= ["GLBFiles"]]
-[connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/ModelUp" to="." method="move_model" binds= [-1]]
-[connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/ModelDown" to="." method="move_model" binds= [1]]
-[connection signal="pressed" from="Root/Content/Pages/Models/Row/ListCard/Column/Toolbar/RemoveModel" to="." method="remove_model"]
-[connection signal="item_selected" from="Root/Content/Pages/Models/Row/ListCard/Column/ModelList" to="." method="show_model"]
-[connection signal="text_changed" from="Root/Content/Pages/Models/Row/FormCard/ModelForm/ModelName" to="." method="rename_model"]
+[connection signal="pressed" from="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar/ImportGLB" to="." method="ask_import" binds= ["GLBFiles"]]
+[connection signal="pressed" from="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar/PartUp" to="." method="move_part" binds= [-1]]
+[connection signal="pressed" from="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar/PartDown" to="." method="move_part" binds= [1]]
+[connection signal="pressed" from="Root/Content/Pages/Parts/Row/ListCard/Column/Toolbar/RemovePart" to="." method="remove_part"]
+[connection signal="item_selected" from="Root/Content/Pages/Parts/Row/ListCard/Column/PartList" to="." method="show_part"]
+[connection signal="text_changed" from="Root/Content/Pages/Parts/Row/FormCard/PartForm/PartName" to="." method="rename_part"]
 [connection signal="pressed" from="Root/Content/Pages/Fields/Row/ListCard/Column/Toolbar/ImportBOV" to="." method="ask_import" binds= ["BOVFiles"]]
 [connection signal="pressed" from="Root/Content/Pages/Fields/Row/ListCard/Column/Toolbar/RemoveField" to="." method="remove_field"]
 [connection signal="item_selected" from="Root/Content/Pages/Fields/Row/ListCard/Column/FieldList" to="." method="show_field"]
@@ -800,6 +936,13 @@ use_native_dialog = true
 [connection signal="text_changed" from="Root/Content/Pages/Fields/Row/FormCard/FieldForm/Size" to="." method="edit_field" unbinds=1]
 [connection signal="pressed" from="Root/Content/Pages/Fields/Row/FormCard/FieldForm/Fit" to="." method="fit_field"]
 [connection signal="toggled" from="Root/Content/Pages/Fields/Row/FormCard/FieldForm/First" to="." method="set_first_field"]
+[connection signal="pressed" from="Root/Content/Pages/Labels/Row/ListCard/Column/Toolbar/AddLabel" to="." method="add_label"]
+[connection signal="pressed" from="Root/Content/Pages/Labels/Row/ListCard/Column/Toolbar/RemoveLabel" to="." method="remove_label"]
+[connection signal="item_selected" from="Root/Content/Pages/Labels/Row/ListCard/Column/LabelList" to="." method="show_label"]
+[connection signal="text_changed" from="Root/Content/Pages/Labels/Row/FormCard/LabelForm/LabelText" to="." method="edit_label"]
+[connection signal="text_changed" from="Root/Content/Pages/Labels/Row/FormCard/LabelForm/LabelPosition" to="." method="edit_label" unbinds=1]
+[connection signal="text_changed" from="Root/Content/Pages/Labels/Row/FormCard/LabelForm/LabelRadius" to="." method="edit_label" unbinds=1]
+[connection signal="text_changed" from="Root/Content/Pages/Labels/Row/FormCard/LabelForm/LabelFrames" to="." method="edit_label" unbinds=1]
 [connection signal="pressed" from="Root/Content/Pages/Images/Row/ListCard/Column/Toolbar/ImportImages" to="." method="ask_import" binds= ["ImageFiles"]]
 [connection signal="pressed" from="Root/Content/Pages/Images/Row/ListCard/Column/Toolbar/RemoveImage" to="." method="remove_image"]
 [connection signal="item_selected" from="Root/Content/Pages/Images/Row/ListCard/Column/ImageList" to="." method="show_image"]
@@ -820,3 +963,7 @@ use_native_dialog = true
 [connection signal="canceled" from="ImportNotesChoice" to="." method="cancel_notes_import"]
 [connection signal="pressed" from="Root/Content/Pages/Fields/ExportStatistics" to="." method="ask_export_statistics"]
 [connection signal="file_selected" from="StatisticsFile" to="." method="export_statistics"]
+[connection signal="text_changed" from="Root/Content/Pages/Model/Card/Column/Form/ModelName" to="." method="rename_model"]
+[connection signal="pressed" from="Root/Content/Pages/Model/Card/Column/Toolbar/ModelUp" to="." method="move_model" binds= [-1]]
+[connection signal="pressed" from="Root/Content/Pages/Model/Card/Column/Toolbar/ModelDown" to="." method="move_model" binds= [1]]
+[connection signal="pressed" from="Root/Content/Pages/Model/Card/Column/Toolbar/RemoveModel" to="." method="remove_model"]

@@ -44,6 +44,8 @@ func _initialize() -> void:
 	_test_static_then_sequence()
 	_test_round_trip()
 	_test_legacy_archives()
+	_test_legacy_frame_identity()
+	_test_nested_model_steps()
 	_test_nested_notes()
 	_test_invalid_archives()
 	_test_corrupt_attachment()
@@ -111,8 +113,8 @@ func _triangle_glb() -> PackedByteArray:
 
 func _seed(draft, folder: String) -> void:
 	var path := _write(folder.path_join("triangle.glb"), _glb)
-	_check(draft.add_glbs(PackedStringArray([path])).is_empty(), "Import a static GLB")
-	_check(draft.models.size() == 1 and draft.times == PackedFloat64Array([0.0]), "Static GLB initializes a playable frame")
+	_check(draft.add_glbs(draft.add_model(), PackedStringArray([path])).is_empty(), "Import a static GLB")
+	_check(draft.models.size() == 1 and draft.models[0].times() == PackedFloat64Array([0.0]), "Static GLB initializes a playable frame")
 	draft.title = "Packaging fixture"
 	draft.notes = "[b]Original notes[/b]"
 
@@ -174,9 +176,9 @@ func _test_static_then_sequence() -> void:
 		_write("sequence/source/flow0001.glb", _glb),
 		_write("sequence/source/flow0002.glb", _glb),
 	])
-	_check(draft.add_glbs(paths).is_empty(), "Import an animated sequence after a static model")
-	_check(draft.times == PackedFloat64Array([0.0, 1.0]), "A sequence replaces the automatic single-frame timeline")
-	_check(draft.models.size() == 2 and draft.models[0].files.size() == 1 and draft.models[1].files.size() == 2, "Static and animated models coexist")
+	_check(draft.add_glbs(draft.models[0], paths).is_empty(), "Import an animated sequence after a static model")
+	_check(draft.models[0].times() == PackedFloat64Array([0.0, 1.0]), "A sequence replaces the automatic single-frame timeline")
+	_check(draft.models[0].parts.size() == 2 and draft.models[0].parts[0].files.size() == 1 and draft.models[0].parts[1].files.size() == 2, "Static and animated parts coexist")
 	_check(draft.save(_root.path_join("sequence/package.zip")).is_empty(), "A mixed static/animated package saves successfully")
 	draft.close()
 	var scalar := Draft.new()
@@ -187,8 +189,8 @@ func _test_static_then_sequence() -> void:
 		_write("bov/source/" + data_name, PackedByteArray([index + 1, 255]))
 		var header := "TIME: %d\nBRICK ORIGIN: 0 0 0\nDATA SIZE: 2 1 1\nDATA FORMAT: BYTES\nVARIABLE: Magnitude\nDATA FILE: %s\n" % [index, data_name]
 		headers.append(_write("bov/source/frame%04d.bov" % index, header.to_utf8_buffer()))
-	_check(scalar.add_bovs(headers).is_empty(), "Import scalar BOV frames after a static model")
-	_check(scalar.times == PackedFloat64Array([0.0, 1.0]) and scalar.fields.size() == 1 and scalar.fields[0].bricks.size() == 2, "BOV frames replace the automatic timeline without dropping either brick")
+	_check(scalar.add_bovs(scalar.models[0], headers).is_empty(), "Import scalar BOV frames after a static model")
+	_check(scalar.models[0].times() == PackedFloat64Array([0.0, 1.0]) and scalar.models[0].fields.size() == 1 and scalar.models[0].fields[0].bricks.size() == 2, "BOV frames replace the automatic timeline without dropping either brick")
 	_check(scalar.save(_root.path_join("bov/package.zip")).is_empty(), "Static geometry plus scalar BOV frames saves successfully")
 	scalar.close()
 
@@ -232,8 +234,8 @@ func _test_round_trip() -> void:
 	field.name = "Magnitude"
 	field.cells = Vector3i(2, 1, 1)
 	field.range = Vector2(-2.0, 2.0)
-	field.bricks[0] = _write("roundtrip/source/magnitude.bin", PackedByteArray([1, 255]))
-	draft.fields.append(field)
+	field.bricks[0.0] = _write("roundtrip/source/magnitude.bin", PackedByteArray([1, 255]))
+	draft.models[0].fields.append(field)
 	var target := _root.path_join("roundtrip/package.zip")
 	if not _check(draft.save(target).is_empty(), "Save a complete viewer-compatible package"):
 		draft.close()
@@ -244,7 +246,7 @@ func _test_round_trip() -> void:
 		return
 	var manifest: Dictionary = JSON.parse_string(entries["meta.json"].get_string_from_utf8())
 	_check(manifest.get("attachments", []).size() == expected.size(), "Manifest lists every attachment")
-	_check(entries[manifest.models[0].path] == _glb, "GLB bytes are unchanged")
+	_check(entries[manifest.models[0].parts[0].path] == _glb, "GLB bytes are unchanged")
 	_check(entries["images/diagram.svg"] == _svg, "Image bytes are unchanged")
 	_check(entries[manifest.notes].get_string_from_utf8() == draft.notes, "Notes and image/frame tags survive packaging")
 	for name: String in expected:
@@ -256,7 +258,7 @@ func _test_round_trip() -> void:
 	if not _check(reopened.open(target).is_empty(), "Reopen the saved package"):
 		return
 	_check(reopened.attachments.size() == expected.size(), "Recognized model, notes, field and image files are not duplicated as attachments")
-	_check(reopened.fields.size() == 1 and reopened.read_source(reopened.fields[0].bricks[0]) == PackedByteArray([1, 255]), "Scalar field bytes remain available")
+	_check(reopened.models[0].fields.size() == 1 and reopened.read_source(reopened.models[0].fields[0].bricks[0.0]) == PackedByteArray([1, 255]), "Scalar field bytes remain available")
 	_remove_tree(_root.path_join("roundtrip/source"))
 	_check(reopened.save(target).is_empty(), "Resave after every original source file is removed")
 	var copy_path := _root.path_join("roundtrip/copied.zip")
@@ -312,6 +314,66 @@ func _test_legacy_archives() -> void:
 		for name: String in extra:
 			_check(result.has(name) and result[name] == extra[name], "Preserve original archive-relative path and bytes: " + name)
 		draft.close()
+
+
+func _test_legacy_frame_identity() -> void:
+	var manifest := _manifest()
+	manifest.frames = [{time = 2}, {time = 0}, {time = 2}]
+	manifest.fields = [{name = "F", cells = [1, 1, 1], path = "brick"}]
+	var extra := {"brick/1.bin": PackedByteArray([8]), "brick/2.bin": PackedByteArray([0]), "brick/3.bin": PackedByteArray([243])}
+	var path := _root.path_join("legacy/duplicate-times.zip")
+	_make_zip(path, manifest, extra)
+	var draft := Draft.new()
+	if not _check(draft.open(path).is_empty(), "Open original flat frame ordering"):
+		return
+	draft.notes = "Changed notes"
+	if not _check(draft.save(path).is_empty(), "Edit and resave a flat archive with repeated solver times"):
+		return
+	var model := draft.models[0]
+	_check(model.times() == PackedFloat64Array([2, 0, 2]), "Unordered duplicate solver times retain their original indices")
+	for i in 3:
+		_check(draft.read_brick_checked(model.fields[0], model.times()[i], i).bytes == extra["brick/%d.bin" % (i + 1)], "Each original frame keeps its corresponding scalar brick")
+	draft.close()
+
+
+func _test_nested_model_steps() -> void:
+	var draft := Draft.new()
+	_seed(draft, "nested-models")
+	var second := draft.add_model()
+	second.name = "Second"
+	var one := _write("nested-models/flow01.glb", _glb)
+	var two := _write("nested-models/flow02.glb", _glb)
+	_check(draft.add_glbs(second, PackedStringArray([two, one])).is_empty(), "Add an animated part to a second volume")
+	second.parts[0].times = PackedFloat64Array([3.0, 9.0])
+	var fixed := Draft.Field.new()
+	fixed.name = "Reference"
+	fixed.cells = Vector3i.ONE
+	fixed.untimed = true
+	fixed.bricks[0.0] = _write("nested-models/reference.bin", PackedByteArray([101]))
+	second.fields.append(fixed)
+	var changing := Draft.Field.new()
+	changing.name = "Temperature"
+	changing.cells = Vector3i.ONE
+	changing.bricks[5.0] = _write("nested-models/lower.bin", PackedByteArray([1]))
+	changing.bricks[9.0] = _write("nested-models/upper.bin", PackedByteArray([255]))
+	second.fields.append(changing)
+	second.first_field = 1
+	var label := Draft.PointLabel.new()
+	label.text = "Inspect the hot region"
+	label.position = Vector3(2, 4, 8)
+	label.span = second.span_of(1, 1)
+	second.labels.append(label)
+	var path := _root.path_join("nested-models/package.zip")
+	if not _check(draft.save(path).is_empty(), "Save and reopen two volumes with separate timelines"):
+		return
+	var manifest: Dictionary = JSON.parse_string(_zip_entries(path)["meta.json"].get_string_from_utf8())
+	_check(not manifest.has("frames") and manifest.models.size() == 2 and manifest.models[1].parts.size() == 1, "New ZIP uses the team's nested model schema")
+	_check(manifest.models[1].fields[0].path.ends_with(".bin") and not manifest.models[1].fields[0].has("times"), "Untimed brick stays a single source with no extra frame")
+	_check(draft.models[0].times() == PackedFloat64Array([0]) and draft.models[1].times() == PackedFloat64Array([3,5,9]), "Model timelines remain independent through save")
+	second = draft.models[1]
+	_check(second.first_field == 1 and second.fields[0].untimed and second.label_frames(second.labels[0]) == Vector2i(1,1), "Round trip preserves active field, static brick and label frames")
+	_check(draft.read_brick_checked(second.fields[0], 9.0).bytes == PackedByteArray([101]) and draft.read_brick_checked(second.fields[1], 3.0).bytes == PackedByteArray([1]), "Static and held source display the same bytes after reopening")
+	draft.close()
 
 
 func _test_nested_notes() -> void:
@@ -414,7 +476,7 @@ func _test_missing_sources() -> void:
 	_check(not draft.save(target).is_empty(), "Saving reports a disappeared source")
 	_check(FileAccess.get_file_as_bytes(target) == original, "Missing source cannot replace the prior ZIP")
 	_check(draft.notes == "Unfinished edits must survive" and draft.attachments.size() == 1, "Failed save keeps current edits and attachment references")
-	_check(draft.read_source(draft.models[0].files[0]) == _glb, "Prior ZIP remains readable after source failure")
+	_check(draft.read_source(draft.models[0].parts[0].files[0]) == _glb, "Prior ZIP remains readable after source failure")
 	draft.close()
 
 
@@ -432,7 +494,7 @@ func _test_failed_replacement() -> void:
 	draft.fail_replace = true
 	_check(not draft.save(target).is_empty(), "Injected final rename failure is reported")
 	_check(FileAccess.get_file_as_bytes(target) == original, "Final rename failure preserves the exact previous ZIP")
-	_check(draft.notes == "Edited notes" and draft.read_source(draft.models[0].files[0]) == _glb, "Rename failure retains draft edits and usable ZIP sources")
+	_check(draft.notes == "Edited notes" and draft.read_source(draft.models[0].parts[0].files[0]) == _glb, "Rename failure retains draft edits and usable ZIP sources")
 	draft.fail_replace = false
 	_check(draft.save(target).is_empty(), "Retry succeeds without reopening or losing edits")
 	draft.close()
@@ -450,7 +512,7 @@ func _test_failed_write() -> void:
 	draft.fail_write = true
 	_check(not draft.save(target).is_empty(), "Injected ZIP entry write failure is reported")
 	_check(FileAccess.get_file_as_bytes(target) == original, "ZIP entry write failure preserves the old archive")
-	_check(draft.notes == "Keep me after write failure" and draft.read_source(draft.models[0].files[0]) == _glb, "Write failure keeps the editable draft and open sources")
+	_check(draft.notes == "Keep me after write failure" and draft.read_source(draft.models[0].parts[0].files[0]) == _glb, "Write failure keeps the editable draft and open sources")
 	draft.fail_write = false
 	_check(draft.save(target).is_empty(), "A failed entry write can be retried")
 	draft.close()
@@ -467,7 +529,7 @@ func _test_failed_destination() -> void:
 	_check(not draft.save(invalid).is_empty(), "Reject a destination that is a directory")
 	_check(DirAccess.dir_exists_absolute(invalid), "Failed save does not remove the destination directory")
 	_check(FileAccess.get_file_as_bytes(target) == original, "Failed Save As preserves the original package")
-	_check(draft.read_source(draft.models[0].files[0]) == _glb, "Failed Save As preserves readable model sources")
+	_check(draft.read_source(draft.models[0].parts[0].files[0]) == _glb, "Failed Save As preserves readable model sources")
 	draft.close()
 
 

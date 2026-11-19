@@ -2,7 +2,6 @@ extends SceneTree
 ## Real ZIP/document integration. Scene signals exercise controls and routing;
 ## this suite does not emulate a pointer device or native headset gestures.
 
-const Document := preload("res://app/document.tscn")
 const POINTS := {0: Vector3(0.625, 0.5, 0.5), 1: Vector3(0.875, 0.5, 0.5)}
 
 var _checks := 0
@@ -95,12 +94,13 @@ func _fixture(path: String) -> void:
 
 
 func _document(path: String) -> Node:
-	var document := Document.instantiate()
+	var document: Node = load("res://app/document.tscn").instantiate()
 	root.add_child(document)
 	# Hold playback at the chosen frame while retaining the real playing flag.
 	# Inspector processing and its worker thread remain enabled.
 	document.set_process(false)
 	_check(document.open(path).is_empty(), "Open actual document scene and ZIP metadata")
+	document.clock.set_process(false)
 	document.touch.set_process(false)
 	document.probes.set_process(false)
 	document.show_probe_history()
@@ -142,13 +142,13 @@ func _run() -> void:
 	_check(history.title == "Probe history integration – Probe history", "Inspection window identifies its source document")
 	_check(history.readout.text.contains("B − A: 2.0 Pa"), "Inspector shows the exact signed difference for the current frame")
 	var frame_before: int = document.frame
-	var playing_before: bool = document.playing
+	var playing_before: bool = document.clock.playing
 	await _analyze(history)
 	if history.result.is_empty():
 		document.free()
 		_finish()
 		return
-	_check(document.frame == frame_before and document.playing == playing_before, "Scanning history leaves playback position and play state unchanged")
+	_check(document.frame == frame_before and document.clock.playing == playing_before, "Scanning history leaves playback position and play state unchanged")
 	_check(history.result.rows.size() == 4 and history.timeline._frame_count == 4, "All archive frames reach the timeline")
 	var rows: Array = history.result.rows
 	_check(rows[0].a == 0.0 and rows[0].b == 2.0 and rows[0].delta == 2.0, "First history row retains physical zero and B minus A")
@@ -158,7 +158,7 @@ func _run() -> void:
 	_check(history.result.cells[0] == Vector3i(2, 0, 0) and history.result.cells[1] == Vector3i(3, 0, 0), "Analyzed cells agree with placement and current-frame sampling")
 	var result_before: Dictionary = history.result.duplicate(true)
 	history.timeline.frame_selected.emit(2)
-	_check(document.frame == 2 and not document.playing and history.timeline._frame == 2, "Timeline selection seeks the document, pauses playback, and updates its cursor")
+	_check(document.frame == 2 and not document.clock.playing and history.timeline._frame == 2, "Timeline selection seeks the document, pauses playback, and updates its cursor")
 	_check(history.result == result_before and document.inspection.get_committed_points() == POINTS, "Seeking retains the analyzed history and committed positions")
 	_check(history.readout.text.contains("frame 3 / 4") and history.readout.text.contains("B: No data"), "Timeline seek refreshes the visible current-frame values")
 	_check(history.readout.text.contains("B − A: place both probes on valid data"), "Missing current-frame data clears the previous numeric difference")
@@ -172,7 +172,88 @@ func _run() -> void:
 	document.close()
 	await _settle()
 	_check(not is_instance_valid(document), "Closing document releases inspector and joins its worker")
+	await _test_multiple_models()
 	_finish()
+
+
+## Exercise the library's normal multi-volume entry point, including two fields
+## with identical names, units and grids but independent steps and samples.
+func _test_multiple_models() -> void:
+	var path := _directory.path_join("two-models.zip")
+	var field := {"name": "Pressure", "unit": "Pa", "range": [-2, 2], "cells": [2, 1, 1],
+		"path": "front/pressure", "times": [1.0, 4.0]}
+	var rear_field := field.duplicate(true)
+	rear_field.path = "rear/pressure"
+	rear_field.times = [0.0, 3.0]
+	var manifest := {"title": "Coupled models", "models": [
+		{"name": "Front", "parts": [{"name": "Surface", "path": "front/parts", "times": [0.0, 2.0]}], "fields": [field]},
+		{"name": "Rear", "parts": [{"name": "Surface", "path": "rear.glb"}], "fields": [rear_field]}]}
+	var glb := _glb()
+	var files := {"meta.json": JSON.stringify(manifest).to_utf8_buffer(),
+		"front/parts/1.glb": glb, "front/parts/2.glb": glb, "rear.glb": glb,
+		"front/pressure/1.bin": PackedByteArray([128, 255]), "front/pressure/2.bin": PackedByteArray([0, 128]),
+		"rear/pressure/1.bin": PackedByteArray([1, 255]), "rear/pressure/2.bin": PackedByteArray([255, 128])}
+	var zip := ZIPPacker.new()
+	_check(zip.open(path) == OK, "Create multi-volume package")
+	for name in files:
+		_check(zip.start_file(name) == OK and zip.write_file(files[name]) == OK and zip.close_file() == OK, "Package " + name)
+	_check(zip.close() == OK, "Close multi-volume fixture")
+	var library: Node = load("res://app/launcher.tscn").instantiate()
+	root.add_child(library)
+	library.open_zip(path)
+	var documents: Array[Node] = []
+	for child in library.get_children():
+		if child.has_method("show_probe_history"):
+			documents.append(child)
+	_check(documents.size() == 2, "The library opens one document per model in the ZIP")
+	if documents.size() != 2:
+		library.free()
+		return
+	var front := documents[0]
+	var rear := documents[1]
+	front.clock.set_playing(false)
+	_check(front.clock == rear.clock and front.clock.times == PackedFloat64Array([0, 1, 2, 3, 4]), "Both documents follow the team's union clock")
+	front.show_probe_history()
+	rear.show_probe_history()
+	_place(front.history, 0, 0)
+	_place(front.history, 1, 1)
+	_check(rear.inspection.get_committed_points().is_empty(), "Equal field names do not share committed points")
+	_place(rear.history, 0, 0)
+	await _analyze(front.history)
+	await _analyze(rear.history)
+	if front.history.result.is_empty() or rear.history.result.is_empty():
+		library.free()
+		return
+	_check(front.history.result.rows.size() == 4 and rear.history.result.rows.size() == 2, "Each history follows its own model's display frames")
+	_check(front.history.result.rows[2].a == 0.0 and front.history.result.rows[2].b == 2.0 and rear.history.result.rows[0].a == -2.0, "Each inspector samples its own brick even when both fields have the same name")
+	front.history.timeline.frame_selected.emit(2)
+	_check(front.clock.time() == 2.0 and front.frame == 2 and rear.frame == 0, "Scrubbing the history seeks both documents through the shared clock")
+	var session := _directory.path_join("front-points.json")
+	front.history.save_points(session)
+	var rear_points: Dictionary = rear.inspection.get_committed_points()
+	rear.history.load_points(session)
+	_check(rear.inspection.get_committed_points() == rear_points and not rear.history.status.text.contains("Restored"), "A saved placement cannot cross model boundaries within the same ZIP")
+	var csv := _directory.path_join("front-history.csv")
+	front.history.export_to(csv)
+	await _wait_idle(front.history)
+	var table := FileAccess.open(csv, FileAccess.READ)
+	_check(table != null, "Export the plotted model's history from the inspector")
+	if table != null:
+		var header := table.get_csv_line()
+		var rows: Array[PackedStringArray] = []
+		while table.get_position() < table.get_length():
+			rows.append(table.get_csv_line())
+		table.close()
+		_check(rows.size() == 4 and header.has("source_time") and header.has("model"), "CSV includes all displayed frames, selected model and source time")
+		if rows.size() == 4 and header.has("source_time") and header.has("model"):
+			_check(rows[2][header.find("model")] == "Front" and rows[2][header.find("solver_time")].to_float() == 2.0 and rows[2][header.find("source_time")].to_float() == 1.0 and rows[2][header.find("source_file")] == "front/pressure/1.bin", "CSV distinguishes displayed model time from the held brick's source time and file")
+			_check(rows[3][header.find("a_value")] == "" and rows[3][header.find("b_value")].to_float() == 0.0, "New source step exports its missing value and physical zero separately")
+	front.close()
+	await _settle()
+	_check(is_instance_valid(rear.clock) and not rear.history.result.is_empty(), "Closing one volume preserves its sibling's clock and analysis")
+	rear.close()
+	await _settle()
+	library.free()
 
 
 func _test_files(document: Node) -> void:
@@ -198,7 +279,7 @@ func _test_files(document: Node) -> void:
 	document.select_field(1)
 	_check(document._radius > previous_radius * 10.0, "Selecting a distant field refits the desktop model while history is visible")
 	for corner in 8:
-		var point: Vector3 = document.meta.fields[1].box * Vector3(corner & 1, (corner >> 1) & 1, (corner >> 2) & 1)
+		var point: Vector3 = document.entry.fields[1].box * Vector3(corner & 1, (corner >> 1) & 1, (corner >> 2) & 1)
 		_check(point.distance_to(document._center) <= document._radius + 0.0001, "Selected field corner stays within the fitted model volume")
 	_place(history, 0, 0)
 	_check(history.result.is_empty() and history.readout.text.contains("Temperature"), "Field selection invalidates the previous history and switches readout metadata")
@@ -325,7 +406,7 @@ func _test_point_validation(document: Node) -> void:
 
 func _test_cell_precision(document: Node) -> void:
 	var history: Window = document.history
-	var entry: RefCounted = document.meta.fields[0]
+	var entry: RefCounted = document.entry.fields[0]
 	var previous: Vector3i = entry.cells
 	# A metadata-only stress case: no large allocation or fixture brick is needed.
 	entry.cells = Vector3i(33554432, 1, 1)

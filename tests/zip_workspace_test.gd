@@ -41,6 +41,7 @@ func _run() -> void:
 	await _test_notes()
 	await _test_saves()
 	await _test_statistics()
+	await _test_second_volume()
 	_workspace.close()
 	await process_frame
 	print("ZIP workspace: %d checks, %d failures" % [_checks, _failures])
@@ -80,7 +81,7 @@ func _write(relative: String, bytes: PackedByteArray) -> String:
 
 
 func _test_files() -> void:
-	_workspace.get_node("Root/Sidebar/Column/FilesSection").pressed.emit()
+	_workspace._nav_buttons.Files.pressed.emit()
 	_check(_workspace.get_node("Root/Content/Pages/Files").visible, "Files sidebar opens its page")
 	var vector := _write("source/velocity.vec", PackedByteArray([0, 255, 128, 42]))
 	var text := _write("source/readme.txt", "Keep this source unchanged\n".to_utf8_buffer())
@@ -156,7 +157,7 @@ func _test_notes() -> void:
 func _test_saves() -> void:
 	var glb := _write("source/triangle.glb", _triangle_glb())
 	_workspace.get_node("%GLBFiles").files_selected.emit(PackedStringArray([glb]))
-	if not _check(_workspace.draft.models.size() == 1 and _workspace.draft.times.size() == 1, "Existing GLB picker creates a playable draft"):
+	if not _check(_workspace.draft.models.size() == 1 and _workspace.model.times().size() == 1, "Existing GLB picker creates a playable draft"):
 		return
 	var original_target: String = _workspace.target
 	var original_notes: String = _workspace.draft.notes
@@ -186,7 +187,7 @@ func _test_saves() -> void:
 	_workspace.push_input(click, true)
 	_check(not _workspace.get_node("%NotesFile").visible, "Mouse input cannot open the TXT picker during saving")
 	_workspace.edit_title("Blocked title")
-	_workspace.add_frame()
+	_workspace.add_model()
 	_workspace.import_glbs(PackedStringArray([glb]))
 	_workspace.import_files(PackedStringArray([pending]))
 	_workspace.import_notes(pending)
@@ -199,7 +200,7 @@ func _test_saves() -> void:
 		return
 	_check(not _workspace.gui_disable_input and not _workspace.get_node("%Save").disabled, "Save completion restores editing")
 	_check(_workspace.draft.title == original_title and _workspace.draft.notes == original_notes, "Late editing and TXT callbacks cannot change a draft being saved")
-	_check(_workspace.draft.models.size() == 1 and _workspace.draft.times.size() == 1 and _workspace.draft.attachments.keys() == attachments.keys(), "Late model, frame and file callbacks cannot mutate the save")
+	_check(_workspace.draft.models.size() == 1 and _workspace.model.times().size() == 1 and _workspace.draft.attachments.keys() == attachments.keys(), "Late model, frame and file callbacks cannot mutate the save")
 	_check(_saved.size() == 1 and _saved[0].path == original_target and not _saved[0].play, "Successful background save emits the correct target once")
 	_check(_workspace.get_node("%Status").text == "Saved", "Successful save reports Saved")
 	_check(_workspace.get_node("%AttachmentInfo").text.contains("Saved ZIP"), "File source details refresh after saving")
@@ -259,9 +260,8 @@ func _test_statistics() -> void:
 	field.range = Vector2(0.0, 254.0)
 	field.origin = Vector3(10.0, 20.0, 30.0)
 	field.size = Vector3(2.0, 3.0, 4.0)
-	field.bricks[0] = source
-	_workspace.draft.fields.append(field)
-	_workspace.draft.times[0] = 7.5
+	field.bricks[7.5] = source
+	_workspace.model.fields.append(field)
 	var extra_model := _write("statistics/extra-model.glb", _triangle_glb(1.0))
 	_workspace.get_node("%GLBFiles").files_selected.emit(PackedStringArray([extra_model]))
 	_check(field.origin == Vector3(10.0, 20.0, 30.0) and field.size == Vector3(2.0, 3.0, 4.0), "Importing a GLB preserves the field source geometry")
@@ -281,7 +281,7 @@ func _test_statistics() -> void:
 	dialog.file_selected.emit(output)
 	_check(_workspace._busy and _workspace.gui_disable_input and button.disabled, "Statistics worker blocks editing and repeat exports")
 	_workspace.edit_title("Must not change during export")
-	_workspace.add_frame()
+	_workspace.add_model()
 	_workspace.save()
 	_workspace.ask_export_statistics()
 	_workspace.export_statistics(_root.path_join("statistics/ignored.csv"))
@@ -296,14 +296,14 @@ func _test_statistics() -> void:
 	var header := csv.get_csv_line()
 	var row := csv.get_csv_line()
 	csv.close()
-	var expected := PackedStringArray(["field", "quantity", "unit", "frame", "solver_time", "source_file", "valid_count", "missing_count", "min", "max", "mean"])
+	var expected := PackedStringArray(["field", "quantity", "unit", "frame", "solver_time", "source_file", "valid_count", "missing_count", "min", "max", "mean", "model_index", "model", "field_index", "source_step", "source_time", "source_static"])
 	if _check(header == expected and row.size() == expected.size(), "Workspace export uses the documented CSV columns"):
 		_check(row[0] == field.name and row[1] == field.quantity and row[2] == field.unit, "CSV uses the current unsaved field metadata")
 		_check(row[3].to_int() == 1 and is_equal_approx(row[4].to_float(), 7.5), "CSV uses the current unsaved timeline")
 		_check(row[6].to_int() == 2 and row[7].to_int() == 0 and is_equal_approx(row[8].to_float(), 0.0) and is_equal_approx(row[9].to_float(), 254.0) and is_equal_approx(row[10].to_float(), 127.0), "CSV statistics come from the unsaved field bytes and range")
 	_check(_workspace.get_node("%Status").text == "Exported current.csv", "Statistics completion reports the exported file")
 	_check(_workspace.target == original_target and FileAccess.get_file_as_bytes(original_target) == original_zip and _saved.size() == saves_before, "Statistics export never saves or changes the working ZIP")
-	_check(_workspace.draft.fields[0] == field and _workspace.draft.times == PackedFloat64Array([7.5]) and _workspace.draft.title == original_title, "Statistics export retains all unsaved edits and ignores editing callbacks")
+	_check(_workspace.model.fields[0] == field and _workspace.model.times() == PackedFloat64Array([7.5]) and _workspace.draft.title == original_title, "Statistics export retains all unsaved edits and ignores editing callbacks")
 	_check(not FileAccess.file_exists(_root.path_join("statistics/ignored.csv")), "A repeated export callback cannot start a second output")
 
 	var invalid := _root.path_join("statistics/directory.csv")
@@ -320,7 +320,28 @@ func _test_statistics() -> void:
 		return
 	_check(FileAccess.get_file_as_bytes(source) == PackedByteArray([1, 255]), "Statistics export cannot overwrite a current field source")
 	_check(not _workspace.get_node("%Status").text.begins_with("Exported "), "Source overwrite protection is reported in the workspace")
-	_check(_workspace.target == original_target and _saved.size() == saves_before and _workspace.draft.fields[0] == field, "Export failures keep the draft and save target intact")
+	_check(_workspace.target == original_target and _saved.size() == saves_before and _workspace.model.fields[0] == field, "Export failures keep the draft and save target intact")
+
+
+func _test_second_volume() -> void:
+	var first: Draft.Model = _workspace.model
+	_workspace.add_model()
+	_workspace.get_node("%ModelName").text_changed.emit("Second volume")
+	var second: Draft.Model = _workspace.model
+	_check(second != first and second.name == "Second volume" and second.fields.is_empty(), "Add model selects its own editor and keeps the first volume's field")
+	var geometry := _write("second/part.glb", _triangle_glb(0.8))
+	_workspace.get_node("%GLBFiles").files_selected.emit(PackedStringArray([geometry]))
+	_workspace._nav_buttons.Labels.pressed.emit()
+	_workspace.add_label()
+	_workspace.get_node("%LabelText").text = "Second volume label"
+	_workspace.edit_label()
+	_workspace.save()
+	if not await _wait_save():
+		return
+	_check(_workspace.model == _workspace.draft.models[1] and _workspace.model.name == "Second volume", "Saving and reopening sources retains the selected model")
+	_check(_workspace.model.labels.size() == 1 and _workspace.model.labels[0].text == "Second volume label", "Edited label stays in its selected volume")
+	_check(_workspace.draft.models[0].fields.size() == 1 and _workspace.model.fields.is_empty() and _workspace.model.parts.size() == 1, "Fields and geometry remain scoped to their own volume after save")
+	_check(_workspace.draft.attachments.size() == 2 and not _workspace.draft.notes.is_empty(), "Both model editors share the same notes and attachments")
 
 
 func _wait_save() -> bool:

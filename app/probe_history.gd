@@ -4,17 +4,22 @@ extends "res://app/field_analysis.gd"
 ## Sessions contain locations and source identity, never authoritative readings.
 
 const SESSION_VERSION := 1
+const MODEL_SESSION_VERSION := 2
+const MODEL_IDENTITY_ALGORITHM := "zip-index-model-crc32-v2"
 const IDENTITY_ALGORITHM := "zip-index-crc32-v1"
 const MAX_SESSION_BYTES := 65536
-const HISTORY_COLUMNS := ["source_zip", "source_identity", "field", "quantity", "unit", "frame", "solver_time", "source_file", "a_u", "a_v", "a_w", "a_cell_x", "a_cell_y", "a_cell_z", "a_byte", "a_valid", "a_value", "b_u", "b_v", "b_w", "b_cell_x", "b_cell_y", "b_cell_z", "b_byte", "b_valid", "b_value", "b_minus_a"]
+const HISTORY_COLUMNS := ["source_zip", "source_identity", "field", "quantity", "unit", "frame", "solver_time", "source_file", "a_u", "a_v", "a_w", "a_cell_x", "a_cell_y", "a_cell_z", "a_byte", "a_valid", "a_value", "b_u", "b_v", "b_w", "b_cell_x", "b_cell_y", "b_cell_z", "b_byte", "b_valid", "b_value", "b_minus_a", "model_index", "model", "field_index", "source_step", "source_time", "source_static"]
 
 ## Uses the already-opened metadata and cached ZIP index, without inflating
 ## bricks or scanning the archive. The digest is a change detector based on
 ## ZIP CRCs, not a cryptographic assertion about the archive's provenance.
-static func snapshot(meta: RefCounted, field_index: int) -> Dictionary:
-	if field_index < 0 or field_index >= meta.fields.size():
+static func snapshot(meta: RefCounted, field_index: int, model_index: int = 0) -> Dictionary:
+	if model_index < 0 or model_index >= meta.models.size():
+		return {error = "Choose a model before analyzing probes.", identity = {}}
+	var model: Meta.Model = meta.models[model_index]
+	if field_index < 0 or field_index >= model.fields.size():
 		return {error = "Choose a scalar field before analyzing probes.", identity = {}}
-	var field: Meta.Field = meta.fields[field_index]
+	var field: Meta.Field = model.fields[field_index]
 	var entries := []
 	var names: Array = meta.entries.keys()
 	names.sort()
@@ -26,19 +31,28 @@ static func snapshot(meta: RefCounted, field_index: int) -> Dictionary:
 	var payload := {entries = entries, field_index = field_index, name = field.name,
 		quantity = field.quantity, unit = field.unit, range = [field.range.x, field.range.y],
 		cells = [field.cells.x, field.cells.y, field.cells.z], files = Array(field.files),
-		times = Array(meta.times), box = []}
+		times = Array(model.times), box = []}
 	for vector in [field.box.basis.x, field.box.basis.y, field.box.basis.z, field.box.origin]:
 		payload.box.append([vector.x, vector.y, vector.z])
-	return {error = "", identity = {algorithm = IDENTITY_ALGORITHM,
-		digest = JSON.stringify(payload, "", true, true).sha256_text(), field_index = field_index}}
+	var identity := {algorithm = IDENTITY_ALGORITHM, digest = "", field_index = field_index}
+	if not meta.legacy:
+		payload.model_index = model_index
+		payload.model = model.name
+		payload.step_times = Array(field.step_times)
+		payload.step_files = Array(field.step_files)
+		payload.frame_steps = Array(field.frame_steps)
+		identity.algorithm = MODEL_IDENTITY_ALGORITHM
+		identity.model_index = model_index
+	identity.digest = JSON.stringify(payload, "", true, true).sha256_text()
+	return {error = "", identity = identity}
 
 
 func analyze(zip_path: String, field_index: int, points: Dictionary, expected_identity: Dictionary,
-		canceled: Callable = Callable(), progress: Callable = Callable()) -> Dictionary:
+		canceled: Callable = Callable(), progress: Callable = Callable(), model_index: int = 0) -> Dictionary:
 	var checked := _checked_points(points)
 	if not checked.error.is_empty():
 		return _failure(checked.error)
-	if not _valid_identity(expected_identity) or expected_identity.field_index != field_index:
+	if not _valid_identity(expected_identity) or expected_identity.field_index != field_index or int(expected_identity.get("model_index", 0)) != model_index:
 		return _failure("The source snapshot is invalid. Reopen the document before analyzing.")
 	if _is_canceled(canceled):
 		return _failure("Probe history canceled.", true)
@@ -52,7 +66,8 @@ func analyze(zip_path: String, field_index: int, points: Dictionary, expected_id
 	if not error.is_empty():
 		meta.close()
 		return _failure(error)
-	var field: Meta.Field = meta.fields[field_index]
+	var model: Meta.Model = meta.models[model_index]
+	var field: Meta.Field = model.fields[field_index]
 	var cells := {}
 	for slot in checked.points:
 		var cell := _cell(checked.points[slot], field.cells)
@@ -61,10 +76,10 @@ func analyze(zip_path: String, field_index: int, points: Dictionary, expected_id
 			return _failure("A probe location cannot be represented in this grid.")
 		cells[slot] = cell
 	var result := {error = "", canceled = false, source = source.path,
-		identity = expected_identity.duplicate(true), field_index = field_index,
+		identity = expected_identity.duplicate(true), field_index = field_index, model_index = model_index, model = model.name,
 		field = field.name, quantity = field.quantity, unit = field.unit,
 		points = checked.points, cells = cells, rows = []}
-	for frame in meta.times.size():
+	for frame in model.times.size():
 		if _is_canceled(canceled):
 			meta.close()
 			return _failure("Probe history canceled.", true)
@@ -84,8 +99,9 @@ func analyze(zip_path: String, field_index: int, points: Dictionary, expected_id
 		if _is_canceled(canceled):
 			meta.close()
 			return _failure("Probe history canceled.", true)
-		var row := {frame = frame + 1, solver_time = meta.times[frame], source_file = path,
+		var row := {frame = frame + 1, solver_time = model.times[frame], source_file = path,
 			a_byte = null, b_byte = null, a = null, b = null, delta = null}
+		row.merge(Meta.frame_source(field, frame))
 		for slot in cells:
 			var cell: Vector3i = cells[slot]
 			var offset := cell.x + field.cells.x * (cell.y + field.cells.y * cell.z)
@@ -99,7 +115,7 @@ func analyze(zip_path: String, field_index: int, points: Dictionary, expected_id
 		# No brick is retained in results or across reads.
 		loaded.clear()
 		if progress.is_valid():
-			progress.call(frame + 1, meta.times.size())
+			progress.call(frame + 1, model.times.size())
 	meta.close()
 	if _is_canceled(canceled):
 		return _failure("Probe history canceled.", true)
@@ -152,6 +168,8 @@ func export_csv(result: Dictionary, target: String, canceled: Callable = Callabl
 			columns.append(_number(null if row[name + "_byte"] == null else row[name + "_byte"] != 0))
 			columns.append(_number(row[name]))
 		columns.append(_number(row.delta))
+		columns.append_array(PackedStringArray([str(result.model_index), result.model, str(result.field_index),
+			str(row.source_step), _number(row.source_time), _number(row.source_static)]))
 		if _write_row(output, columns) != OK:
 			error = "Couldn't write probe history for frame %d." % row.frame
 	return _finish_output(output, temporary, destination.path, error,
@@ -161,11 +179,11 @@ func export_csv(result: Dictionary, target: String, canceled: Callable = Callabl
 ## The caller supplies committed points, never a live gesture candidate.
 ## This small JSON operation may run synchronously against an open Meta.
 func save_session(meta: RefCounted, field_index: int, points: Dictionary, zip_path: String,
-		target: String, canceled: Callable = Callable()) -> String:
+		target: String, canceled: Callable = Callable(), model_index: int = 0) -> String:
 	var checked := _checked_points(points)
 	if not checked.error.is_empty():
 		return checked.error
-	var captured := snapshot(meta, field_index)
+	var captured := snapshot(meta, field_index, model_index)
 	if not captured.error.is_empty():
 		return captured.error
 	var source := _canonical_path(zip_path)
@@ -185,6 +203,9 @@ func save_session(meta: RefCounted, field_index: int, points: Dictionary, zip_pa
 		stored_points[str(slot)] = [point.x, point.y, point.z]
 	var session := {version = SESSION_VERSION, source = source.path, field_index = field_index,
 		identity = captured.identity, points = stored_points}
+	if not meta.legacy:
+		session.version = MODEL_SESSION_VERSION
+		session.model_index = model_index
 	var temporary := _temporary_path(destination.path)
 	if temporary.is_empty():
 		return "Couldn't create a unique probe-session temporary file."
@@ -200,7 +221,7 @@ func save_session(meta: RefCounted, field_index: int, points: Dictionary, zip_pa
 ## Validate all fields before returning any points. Readings are recomputed
 ## from the current package after restoration; JSON never supplies values.
 func restore_session(path: String, meta: RefCounted, zip_path: String) -> Dictionary:
-	var failed := {error = "", field_index = -1, points = {}, source_session = ""}
+	var failed := {error = "", field_index = -1, model_index = -1, points = {}, source_session = ""}
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		failed.error = "Couldn't open the probe session."
@@ -219,12 +240,15 @@ func restore_session(path: String, meta: RefCounted, zip_path: String) -> Dictio
 		failed.error = "The probe session is not valid JSON."
 		return failed
 	var session: Dictionary = parsed
-	if session.size() != 5 or not _integer(session.get("version")) or session.get("version") != SESSION_VERSION or not session.get("source") is String \
+	var legacy_session: bool = _integer(session.get("version")) and session.version == SESSION_VERSION
+	var schema_ok: bool = (legacy_session and meta.legacy and session.size() == 5) or (_integer(session.get("version")) and session.version == MODEL_SESSION_VERSION and not meta.legacy and session.size() == 6 and _integer(session.get("model_index")))
+	if not schema_ok or not _integer(session.get("version")) or not session.get("source") is String \
 			or not _integer(session.get("field_index")) or not session.get("identity") is Dictionary or not session.get("points") is Dictionary:
 		failed.error = "The probe session schema or version is unsupported."
 		return failed
 	var index := int(session.field_index)
-	if not _valid_identity(session.identity) or int(session.identity.field_index) != index:
+	var model_index := int(session.get("model_index", 0))
+	if not _valid_identity(session.identity) or int(session.identity.field_index) != index or int(session.identity.get("model_index", 0)) != model_index:
 		failed.error = "The probe session has an invalid source identity."
 		return failed
 	var points := {}
@@ -257,7 +281,7 @@ func restore_session(path: String, meta: RefCounted, zip_path: String) -> Dictio
 	if not session_path.error.is_empty():
 		failed.error = session_path.error
 		return failed
-	return {error = "", field_index = index, points = checked.points, source_session = session_path.path}
+	return {error = "", field_index = index, model_index = model_index, points = checked.points, source_session = session_path.path}
 
 
 func _finish_output(output: FileAccess, temporary: String, target: String, error: String,
@@ -295,7 +319,7 @@ static func _temporary_path(target: String) -> String:
 
 
 static func _matches(meta: RefCounted, field_index: int, identity: Dictionary) -> String:
-	var current := snapshot(meta, field_index)
+	var current := snapshot(meta, field_index, int(identity.get("model_index", 0)))
 	if not current.error.is_empty():
 		return current.error
 	if not _valid_identity(identity):
@@ -326,8 +350,8 @@ static func _integer(value: Variant) -> bool:
 
 
 static func _valid_identity(identity: Dictionary) -> bool:
-	return identity.size() == 3 and identity.get("algorithm") == IDENTITY_ALGORITHM \
-		and identity.get("digest") is String and identity.digest.length() == 64 \
+	var schema_ok: bool = (identity.size() == 3 and identity.get("algorithm") == IDENTITY_ALGORITHM) or (identity.size() == 4 and identity.get("algorithm") == MODEL_IDENTITY_ALGORITHM and _integer(identity.get("model_index")) and identity.model_index >= 0)
+	return schema_ok and identity.get("digest") is String and identity.digest.length() == 64 \
 		and _integer(identity.get("field_index")) and identity.field_index >= 0
 
 
@@ -352,11 +376,13 @@ static func _cell(point: Vector3, grid: Vector3i) -> Vector3i:
 static func _result_error(result: Dictionary) -> String:
 	if result.get("error", "invalid") != "" or result.get("canceled", true) or not result.get("rows") is Array or result.rows.is_empty():
 		return "Analyze committed probes successfully before exporting history."
-	for key in ["source", "field", "quantity", "unit"]:
+	for key in ["source", "field", "quantity", "unit", "model"]:
 		if not result.get(key) is String:
 			return "The probe history has invalid source metadata."
 	if not result.get("identity") is Dictionary or not _valid_identity(result.identity) or not _integer(result.get("field_index")) or result.field_index != result.identity.field_index:
 		return "The probe history has an invalid source identity."
+	if not _integer(result.get("model_index")) or result.model_index != result.identity.get("model_index", 0):
+		return "The probe history has an invalid model identity."
 	if not result.get("points") is Dictionary or not result.get("cells") is Dictionary:
 		return "The probe history has invalid locations."
 	if not _checked_points(result.points).error.is_empty() or result.points.size() != result.cells.size():
@@ -368,6 +394,8 @@ static func _result_error(result: Dictionary) -> String:
 		var row: Variant = result.rows[index]
 		if not row is Dictionary or row.get("frame") != index + 1 or not ScalarData.is_finite_number(row.get("solver_time")) or not row.get("source_file") is String:
 			return "The probe history has an invalid frame."
+		if not _integer(row.get("source_step")) or row.source_step < 1 or not row.get("source_static") is bool or (row.source_static and row.get("source_time") != null) or (not row.source_static and not ScalarData.is_finite_number(row.get("source_time"))):
+			return "The probe history has invalid source-step metadata."
 		for slot in [0, 1]:
 			var name := "a" if slot == 0 else "b"
 			if not row.has(name) or not row.has(name + "_byte"):

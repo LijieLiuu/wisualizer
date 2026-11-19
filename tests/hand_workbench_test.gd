@@ -1,47 +1,40 @@
 extends SceneTree
-## Desktop integration uses real trackers and scenes with a local capability
-## override. It does not claim ARKit permission, native hosting, or headset proof.
-
-const Document := preload("res://app/document.tscn")
-const Workbench := preload("res://app/hand_workbench.tscn")
+## Synthetic data through the real team host, controls, handle, and sound.
+## Headless fixtures cannot establish headset presentation or ARKit behavior.
+const Host := preload("res://addons/spatial/reality_kit/reality_kit_volume.gd")
 const INDEX := XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP
 const THUMB := XRHandTracker.HAND_JOINT_THUMB_TIP
 const FLAGS := XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID | XRHandTracker.HAND_JOINT_FLAG_POSITION_TRACKED
 
-class PublishedHands extends RefCounted:
+class Api extends RefCounted:
+	var revision := 2
+	var presented := true
 	var fresh := [true, true]
-	var queried_window := -1
-
-	func is_hand_sample_fresh(window_id: int, hand: int) -> bool:
-		queried_window = window_id
+	var last_window := -1
+	func get_api_revision() -> int:
+		return revision
+	func is_immersive_presented(window: int) -> bool:
+		last_window = window
+		return presented
+	func is_hand_sample_fresh(window: int, hand: int) -> bool:
+		last_window = window
 		return fresh[hand]
 
-class Fixture extends "res://app/hand_workbench.gd":
-	var presentation_ready := true
+class ToolsFixture extends "res://app/hand_workbench.gd":
 	func _runtime_problem() -> String:
 		return ""
-	func _presentation_ready() -> bool:
-		return presentation_ready
-
-class ReferenceFixture extends XRInterfaceExtension:
-	func _get_name() -> StringName:
-		return &"HandWorkbenchTest"
-	func _is_initialized() -> bool:
-		return true
-	func _get_camera_transform() -> Transform3D:
-		return Transform3D(Basis(Vector3.UP, 0.7), Vector3(4, 1, -2))
 
 var _checks := 0
 var _failures := 0
 var _directory := ""
-var _trackers: Dictionary = {}
-var _prior_trackers: Dictionary = {}
+var _trackers := {}
+var _previous := {}
 var _world_scale := 1.0
-
+var _document_scene: PackedScene
+var _tools_scene: PackedScene
 
 func _initialize() -> void:
 	_run.call_deferred()
-
 
 func _check(condition: bool, message: String) -> void:
 	_checks += 1
@@ -110,402 +103,199 @@ func _fixture(path: String) -> void:
 	_check(zip.close() == OK, "Finish ZIP central directory")
 
 
+
 func _document(path: String) -> Node:
-	var document := Document.instantiate()
+	var document := _document_scene.instantiate()
 	root.add_child(document)
+	_check(document.open(path).is_empty(), "Open legacy scalar model in the merged document")
 	document.set_process(false)
-	_check(document.open(path).is_empty(), "Open a real ZIP with valid GLB and scalar frames")
+	document.clock.set_process(false)
 	document.touch.set_process(false)
 	document.probes.set_process(false)
+	document.sound.set_process(false)
+	# Replace only the desktop presentation backend. All tested immersive,
+	# coordinate, lifecycle, and handle methods are the actual team backend.
+	var desktop = document.volume._backend
+	desktop._camera.free()
+	var host = Host.new(document.volume)
+	document.volume._backend = host
+	host.resized.connect(document.volume.resized.emit)
+	host.immersive_changed.connect(document.volume.immersive_changed.emit)
+	host._hand_api = Api.new()
+	document.show_options(true)
 	return document
 
 
-func _bench(document: Node) -> Node:
-	var bench := Workbench.instantiate()
-	bench.set_script(Fixture)
-	bench._native_api = PublishedHands.new()
-	document.add_child(bench)
-	bench.set_process(false)
-	return bench
+func _tools(document: Node) -> Node:
+	var tools := _tools_scene.instantiate()
+	tools.set_script(ToolsFixture)
+	document.options.add_child(tools)
+	document.hand_workbench = tools
+	tools.set_process(false)
+	return tools
 
 
 func _install_trackers() -> void:
 	_world_scale = XRServer.world_scale
-	XRServer.world_scale = 1.0
-	for hand in ["left", "right"]:
-		var name := StringName("/user/hand_tracker/" + hand)
-		_prior_trackers[hand] = XRServer.get_tracker(name)
-		if _prior_trackers[hand] != null:
-			XRServer.remove_tracker(_prior_trackers[hand])
-		var tracker := XRHandTracker.new()
-		tracker.name = name
-		tracker.hand = XRPositionalTracker.TRACKER_HAND_LEFT if hand == "left" else XRPositionalTracker.TRACKER_HAND_RIGHT
-		tracker.has_tracking_data = true
-		# The engine's native joint buffers must be initialized, even for absent joints.
+	for side in ["left", "right"]:
+		var name := StringName("/user/hand_tracker/" + side)
+		_previous[side] = XRServer.get_tracker(name)
+		if _previous[side] != null:
+			XRServer.remove_tracker(_previous[side])
+		var hand := XRHandTracker.new()
+		hand.name = name
+		hand.hand = XRPositionalTracker.TRACKER_HAND_LEFT if side == "left" else XRPositionalTracker.TRACKER_HAND_RIGHT
+		hand.has_tracking_data = true
 		for joint in XRHandTracker.HAND_JOINT_MAX:
-			tracker.set_hand_joint_flags(joint, 0)
-			tracker.set_hand_joint_transform(joint, Transform3D.IDENTITY)
-		tracker.set_pose(&"default", Transform3D(Basis.IDENTITY, Vector3(50, 60, 70)), Vector3.ZERO, Vector3.ZERO, XRPose.XR_TRACKING_CONFIDENCE_HIGH)
-		XRServer.add_tracker(tracker)
-		_trackers[hand] = tracker
+			hand.set_hand_joint_flags(joint, 0)
+		XRServer.add_tracker(hand)
+		_trackers[side] = hand
 
 
-func _put_world(bench: Node, hand: String, joint: int, point: Vector3) -> void:
-	var local: Vector3 = bench.origin.global_transform.orthonormalized().affine_inverse() * point
-	var tracker: XRHandTracker = _trackers[hand]
-	tracker.has_tracking_data = true
-	tracker.set_hand_joint_transform(joint, Transform3D(Basis.IDENTITY, local / XRServer.world_scale))
-	tracker.set_hand_joint_flags(joint, FLAGS)
+func _put(document: Node, side: String, joint: int, unit: Vector3, basis := Basis.IDENTITY) -> void:
+	var world: Vector3 = document.field.global_transform * unit
+	var origin: Transform3D = document.volume._backend._origin.global_transform.orthonormalized()
+	var raw := origin.affine_inverse() * Transform3D(basis, world)
+	raw.origin /= XRServer.world_scale
+	_trackers[side].set_hand_joint_transform(joint, raw)
+	_trackers[side].set_hand_joint_flags(joint, FLAGS)
 
 
-func _put(bench: Node, hand: String, joint: int, point: Vector3) -> void:
-	_put_world(bench, hand, joint, bench.field.global_transform * point)
-
-
-func _tick(bench: Node) -> void:
-	bench._process(0.0)
-
-
-func _wait_history(history: Node) -> void:
-	var deadline := Time.get_ticks_msec() + 10000
-	while history.is_busy() and Time.get_ticks_msec() < deadline:
-		await create_timer(0.01).timeout
-	_check(not history.is_busy(), "Real history analysis joins its worker")
-
-
-func _layout(bench: Node) -> void:
-	var panel: Window = bench.panel
-	var scroll: ScrollContainer = panel.get_node("Margin/Scroll")
-	var column: Control = scroll.get_node("Column")
-	var help: Control = column.get_node("Instructions")
-	var last: Control = column.get_node("Return")
-	var previous := panel.size
-	var previous_minimum := panel.min_size
-	var previous_scale := panel.content_scale_factor
-	var previous_status: String = bench.status.text
-	bench.status.text = "Tracking unavailable. " + "Move both hands into view and allow Hand Tracking in Settings. ".repeat(8)
-	for scale in [1.0, 2.0]:
-		panel.content_scale_factor = scale
-		panel.min_size = Vector2i(Vector2(480, 500) * scale)
-		panel.size = panel.min_size
-		scroll.scroll_vertical = 0
-		await _settle()
-		_check(column.size.x <= scroll.size.x + 0.1, "Controls stay within minimum panel width at scale %s" % scale)
-		_check(help.get_global_rect().position.y >= scroll.get_global_rect().position.y - 0.1, "Top instructions are reachable at scale %s" % scale)
-		for control: Control in column.find_children("*", "Control"):
-			if control is Label or control is Button or control is SpinBox:
-				_check(control.get_global_rect().end.x <= scroll.get_global_rect().end.x + 0.1, "Control %s has no horizontal clipping at scale %s" % [control.name, scale])
-		scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
-		await _settle()
-		_check(last.get_global_rect().end.y <= scroll.get_global_rect().end.y + 0.1 and last.get_global_rect().position.y >= scroll.get_global_rect().position.y - 0.1, "Return action is fully reachable by scrolling at scale %s" % scale)
-		_check(bench.status.get_global_rect().end.y <= scroll.get_global_rect().end.y + 0.1, "Long status is reachable by scrolling at scale %s" % scale)
-	panel.content_scale_factor = previous_scale
-	panel.min_size = previous_minimum
-	panel.size = previous
-	bench.status.text = previous_status
-	scroll.scroll_vertical = 0
+func _event(kind: String, pressed := true) -> InputEvent:
+	var event: InputEvent = ClassDB.instantiate(StringName(kind))
+	event.set("index", 4)
+	event.set("kind", 1)
+	event.set("has_chirality", true)
+	event.set("chirality", 0)
+	if kind == "InputEventSpatialTouch":
+		event.set("pressed", pressed)
+	return event
 
 
 func _run() -> void:
-	_directory = OS.get_temp_dir().path_join("wisualizer-hand-workbench-%d" % Time.get_ticks_usec())
-	_check(DirAccess.make_dir_recursive_absolute(_directory) == OK, "Create isolated fixture directory")
+	_document_scene = load("res://app/document.tscn")
+	_tools_scene = load("res://app/hand_workbench.tscn")
+	_directory = OS.get_temp_dir().path_join("wisualizer-shared-hands-%d" % Time.get_ticks_usec())
+	DirAccess.make_dir_recursive_absolute(_directory)
 	var source := _directory.path_join("source.zip")
 	_fixture(source)
 	_install_trackers()
 	var document := _document(source)
+	var host = document.volume._backend
+	var api: Api = host._hand_api
+	var before_windows := document.find_children("*", "Window", true, false).filter(func(window: Node): return not window is PopupMenu).size()
+	var before_parts: Array = document.parts.duplicate()
+	var before_model: Window = document.model
+	var tools := _tools(document)
+	_check(tools.start(document).is_empty(), "A/B tools enter the team's existing immersive host")
+	_check(document.model == before_model and document.find_children("*", "Window", true, false).filter(func(window: Node): return not window is PopupMenu).size() == before_windows, "A/B tools create no additional window or world")
+	_check(document.parts == before_parts and tools.find_children("*", "Camera3D", true, false).is_empty() and tools.find_children("*", "Node3D", true, false).is_empty(), "A/B tools create no camera, model readers, or duplicate skeleton")
+	_check(document.volume.is_immersive() and host._handle != null and host._head is XRCamera3D, "The team's immersive camera and drag handle remain active")
+	_check(not document.playing and not document.probing, "Opening A/B tools pauses the shared clock and ends gesture placement")
+	var joint_basis := Basis(Vector3.UP, 0.45)
+	_put(document, "left", INDEX, Vector3(0.625, 0.5, 0.5), joint_basis)
+	_put(document, "left", THUMB, Vector3(0.5, 0.5, 0.5))
+	_put(document, "right", INDEX, Vector3(0.875, 0.5, 0.5))
+	tools._process(0.0)
+	_check(tools.live_sample.valid and tools.live_sample.unit.is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Real host origin and world scale undo native tracker conversion exactly once")
+	_check(document.volume.get_hand_joint(_trackers.left, INDEX).basis.is_equal_approx(joint_basis), "Spatial joint API preserves the valid joint orientation")
+	_check(api.last_window == document.model.get_window_id(), "Freshness queries belong to the presented model window")
+	tools.get_node("%PinA").pressed.emit()
+	_check(document.inspection.get_committed_points()[0].is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Real Pin A action stores the selected normalized field point")
+	tools.select_hand(1)
+	tools.get_node("%PinB").pressed.emit()
+	_check(tools.pinned_readout.text.contains("A: 0.0 Pa") and tools.pinned_readout.text.contains("B: 2.0 Pa") and tools.pinned_readout.text.contains("B − A: 2.0 Pa"), "One shared current-frame readout confirms both pins and difference")
+	var pins: Dictionary = document.inspection.get_committed_points()
+	document.probes.update_probes()
+	_check(document.probes._joints.multimesh.instance_count == 3, "Existing team joint MultiMesh shows only the three valid positions")
+	_check(document.probes._probes.has("inspection_0") and document.probes._probes.has(_trackers.right.get_instance_id()), "Pinned and existing live field-cell indicators coexist")
+	var settings: Node = root.get_node("Settings")
+	var old_sound: bool = settings.sound
+	settings.sound = true
+	document.sound._process(0.0)
+	_check(document.sound._voices.size() == 2 and document.sound._voices[_trackers.left].target_loudness > 0.0 and document.sound._voices[_trackers.right].target_loudness > 0.0, "Team stereo finger sound stays active for both hands while A/B tools are open")
+	_check(document.sound._voices[_trackers.left].gains.x > document.sound._voices[_trackers.left].gains.y and document.sound._voices[_trackers.right].gains.y > document.sound._voices[_trackers.right].gains.x, "Team voices retain opposite stereo panning")
+	_check(is_equal_approx(document.sound._voices[_trackers.right].target_pitch, settings.high_pitch), "Maximum right-hand field value retains the team's configured pitch mapping")
+	var old_center: Vector3 = host._space_center
+	host._handle.input_event.emit(host._head, _event("InputEventSpatialTouch"), Vector3.ZERO, Vector3.ZERO, 0)
+	_check(host._handle_touch == 4, "Normal team handle press acquires the tracked pinching hand")
+	var delta := Vector3(0.05, 0.03, -0.02)
+	for joint in [INDEX, THUMB]:
+		var pose: Transform3D = _trackers.left.get_hand_joint_transform(joint)
+		pose.origin += delta
+		_trackers.left.set_hand_joint_transform(joint, pose)
+	host._handle.input_event.emit(host._head, _event("InputEventSpatialDrag"), Vector3.ZERO, Vector3.ZERO, 0)
+	_check(host._space_center.is_equal_approx(old_center + delta), "Normal handle drag moves team placement using raw tracking meters")
+	_check(document.inspection.get_committed_points() == pins, "Moving the team model cannot change committed normalized A/B locations")
+	host._handle.input_event.emit(host._head, _event("InputEventSpatialTouch", false), Vector3.ZERO, Vector3.ZERO, 0)
+	_check(host._handle_touch == -1, "Team handle release ends its gesture normally")
+	_put(document, "left", INDEX, Vector3(0.625, 0.5, 0.5))
+	_put(document, "right", INDEX, Vector3(0.875, 0.5, 0.5))
+	tools.select_hand(0)
+	api.fresh[0] = false
+	tools.pin(0)
+	_check(not tools.live_sample.valid and document.inspection.get_committed_points() == pins and _trackers.left.has_tracking_data, "Click-time freshness rejects an expired hand even while its tracker flags remain set")
+	document.probes.update_probes()
+	document.sound._process(0.0)
+	_check(document.probes._joints.multimesh.instance_count == 1 and document.sound._voices[_trackers.left].target_loudness == 0.0 and document.sound._voices[_trackers.right].target_loudness > 0.0, "The same stale-hand guard removes only that hand's dots and sound")
+	tools.select_hand(1)
+	_check(tools.live_sample.valid, "The independently fresh other hand still samples")
+	api.fresh[0] = true
+	tools.select_hand(0)
+	_check(tools.live_sample.valid, "Fresh reacquisition recovers sampling without reopening")
+	_trackers.left.set_hand_joint_flags(INDEX, XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID)
+	tools.pin(0)
+	_check(not tools.live_sample.valid and not document.volume.get_hand_joint(_trackers.left, INDEX).origin.is_finite(), "An untracked individual joint is unavailable for pinning and ordinary consumers")
+	_trackers.left.set_hand_joint_flags(INDEX, FLAGS)
 	var second := _document(source)
-	var bench := _bench(document)
-	document.hand_workbench = bench
-	_check(bench.start(document).is_empty(), "Opt-in scene starts with test-only capability override")
+	second.set_playing(true)
+	_check(second.inspection.begin(42, second.field.global_transform * Vector3(0.25, 0.5, 0.5), Vector3.ZERO, second.field.global_transform), "Begin an unrelated transient placement in the second model")
+	var second_points: Dictionary = second.inspection.get_points()
+	var transitions := [0]
+	second.volume.immersive_changed.connect(func(_immersive: bool): transitions[0] += 1)
+	second.immersive_button.set_pressed(true)
 	await _settle()
-	_check(bench.document == document and not document.playing and not document.probing, "Workbench binds one document and pauses placement playback")
-	_check(bench.immersive.own_world_3d and bench.origin.get_parent() == bench.immersive, "Immersive window owns its world and tracking origin")
-	var cameras: Array[Node] = bench.immersive.find_children("*", "Camera3D", true, false)
-	_check(cameras.size() == 1 and cameras[0] is XRCamera3D, "First and only camera routes the window to immersive hosting")
-	_check(bench.immersive.find_children("*", "SpatialVolume3D", true, false).is_empty(), "Immersive subtree has no volume backend or volume camera")
-	_check(bench._models.size() == document.models.size() and bench._models[0] != document.models[0] and document.models[0].get_parent() == document.content, "Workbench owns fresh frame loaders without moving document models")
-	_check(not bench._models[0].get_bounds().size.is_zero_approx(), "Valid GLB geometry reaches the independent workbench loader")
-	var contender := _bench(second)
-	_check(not contender.start(second).is_empty() and not contender.immersive.visible and contender.document == null, "A second document cannot replace the active immersive owner")
-	contender.free()
-
-	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
-	_put(bench, "right", INDEX, Vector3(0.875, 0.5, 0.5))
-	_tick(bench)
-	_check(bench.live_sample.valid and bench.live_sample.unit.is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Fresh fingertip maps through the workbench field inverse exactly once")
-	_check(bench.readout.text.contains("0.0 Pa") and bench.readout.text.contains("cell (2, 0, 0)"), "Live scalar readout preserves physical zero and its cell")
-	_check(document.inspection.get_committed_points().is_empty() and second.inspection.get_committed_points().is_empty(), "Continuous readings do not mutate either document's committed pins")
-	_check(bench.pinned_readout.text.contains("A: not placed") and bench.pinned_readout.text.contains("B: not placed"), "Live tip cannot appear in the separate committed readout before pinning")
-	bench.get_node("%PinA").pressed.emit()
-	_check(document.inspection.get_committed_points()[0].is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Explicit Pin A stores normalized field coordinates")
-	_check(bench.pinned_readout.text.contains("A: 0.0 Pa · cell (2, 0, 0)") and bench.pinned_readout.text.contains("B: not placed"), "Pinning immediately shows committed physical zero and its cell")
-	var pinned_a_text: String = bench.pinned_readout.text
-	document.history.analyze()
-	await _wait_history(document.history)
-	_check(not document.history.result.is_empty(), "Committed fingertip drives the real history analyzer")
-	var analyzed: Dictionary = document.history.result.duplicate(true)
-	_test_stale_publication(bench, document)
-	_put(bench, "left", INDEX, Vector3(0.875, 0.5, 0.5))
-	_tick(bench)
-	_check(document.history.result == analyzed and document.inspection.get_committed_points().size() == 1, "Moving live fingertip preserves analyzed history and committed A")
-	for tick in 4:
-		_tick(bench)
-	_check(bench.pinned_readout.text == pinned_a_text and bench.readout.text.contains("2.0 Pa"), "Committed A remains readable across frames while the live fingertip reports a different value")
-	_put(bench, "left", INDEX, Vector3(0.375, 0.5, 0.5))
-	bench.get_node("%PinB").pressed.emit()
-	_check(document.inspection.get_committed_points()[1].is_equal_approx(Vector3(0.375, 0.5, 0.5)) and document.history.result.is_empty(), "Pin B resamples current tracker rather than stale live pose, then invalidates old history")
-	_check(second.inspection.get_committed_points().is_empty(), "Pinning in the first document leaves the second untouched")
-	_check(bench.pinned_readout.text.contains("B: -2.0 Pa · cell (1, 0, 0)") and bench.pinned_readout.text.contains("B − A: -2.0 Pa"), "Committed B and signed B minus A appear immediately")
-	_check(bench.pinned_readout.text == document.history.readout.text and document.probe_readout.text.begins_with(bench.pinned_readout.text), "Workbench, inspector, and volume share the same current-frame reading format")
-	var placed_points: Dictionary = document.inspection.get_committed_points()
-	document.inspection.set_points({0: placed_points[0], 1: placed_points[0]})
-	_tick(bench)
-	_check(bench.pinned_readout.text.contains("A: 0.0 Pa") and bench.pinned_readout.text.contains("B: 0.0 Pa") and bench.pinned_readout.text.contains("B − A: 0.0 Pa"), "Externally replaced coincident pins remain individually identified with a real zero difference")
-	document.clear_probes()
-	_tick(bench)
-	_check(bench.pinned_readout.text.contains("A: not placed") and bench.pinned_readout.text.contains("B: not placed") and not bench.pinned_readout.text.contains("B − A: 0.0 Pa"), "External clear removes committed readings and the previous numeric difference")
-	document.inspection.set_points(placed_points)
-	_tick(bench)
-
-	bench.select_hand(1)
-	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled, "Hand selection clears the previous live candidate immediately")
-	_tick(bench)
-	_check(bench.live_sample.unit.is_equal_approx(Vector3(0.875, 0.5, 0.5)), "Right hand selects its independent tracked position")
-	_put(bench, "right", THUMB, Vector3(0.125, 0.5, 0.5))
-	bench.select_finger(1)
-	_tick(bench)
-	_check(bench.selected_joint == THUMB and bench.live_sample.unit.is_equal_approx(Vector3(0.125, 0.5, 0.5)) and bench.readout.text.contains("No data in this cell"), "Thumb selection displays a valid spatial sample with explicit missing scalar data")
-	_trackers.right.set_hand_joint_flags(THUMB, XRHandTracker.HAND_JOINT_FLAG_POSITION_VALID)
-	_tick(bench)
-	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled and not bench.skeleton._joints.right[THUMB].visible, "An untracked selected joint clears its sample and skeleton marker")
-	_check(bench.pinned_readout.text.contains("A: 0.0 Pa") and bench.pinned_readout.text.contains("B − A: -2.0 Pa"), "Tracking loss clears the live sample while retaining current readings at committed locations")
-	var preserved: Dictionary = document.inspection.get_committed_points()
-	bench.pin(0)
-	_check(document.inspection.get_committed_points() == preserved, "A pin attempt after tracking loss cannot commit a stale point")
-	_trackers.right.has_tracking_data = false
-	_tick(bench)
-	_check(not bench.hands.right.tracked and bench.hands.left.tracked, "Whole right-hand loss preserves the independently tracked left hand")
-	bench.select_hand(0)
-	bench.select_finger(0)
-
-	XRServer.world_scale = 2.0
-	bench.origin.transform = Transform3D(Basis(Vector3.UP, 0.6).scaled(Vector3.ONE * 1.5), Vector3(0.3, -0.2, 0.1))
-	_tick(bench)
-	var tracking_origin: Transform3D = bench.origin.global_transform.orthonormalized()
-	var center: Vector3 = bench.field.global_transform * (Vector3.ONE * 0.5)
-	_check(center.is_equal_approx(tracking_origin * (Fixture.DEFAULT_PLACEMENT * 2.0)), "Default placement retains its meter height and distance under scaled, rotated tracking origin")
-	_check(is_equal_approx(bench.field.global_basis.x.length() / XRServer.world_scale, bench.get_node("%Size").value), "Meter-labeled field size survives runtime world-scale changes")
-	_check(is_equal_approx(bench._pins[0].global_basis.x.length() * bench._pins[0].mesh.radius / XRServer.world_scale, 0.007), "Committed pin markers keep their seven millimeter physical radius")
-	_check(bench._pins[0].global_position.is_equal_approx(bench.field.global_transform * preserved[0]), "Scale and origin refits move committed markers with their normalized field points")
-	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
-	_tick(bench)
-	_check(bench.live_sample.valid and bench.live_sample.unit.is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Origin rotation/translation and world scale are reversed once; origin scale is orthonormalized")
-	_check(is_equal_approx(bench.skeleton._joints.left[INDEX].global_basis.x.length() * bench.skeleton.JOINT_RADIUS / XRServer.world_scale, 0.005), "Workbench supplies world units per meter to its selected skeleton marker")
-	var scaled_tip: Vector3 = bench.hands.left.joints[INDEX]
-	bench.place_near_hand()
-	center = bench.field.global_transform * (Vector3.ONE * 0.5)
-	_check(center.is_equal_approx(scaled_tip + tracking_origin.basis * Vector3(0, 0, -0.24)), "Near-fingertip offset is twelve physical centimeters along tracking-space forward")
-	_check(not bench.live_sample.valid, "A scale-aware placement change clears the old live reading")
-	bench.reset_placement()
-	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
-	_tick(bench)
-	var previous_interface: XRInterface = XRServer.primary_interface
-	var reference := ReferenceFixture.new()
-	XRServer.add_interface(reference)
-	XRServer.primary_interface = reference
-	XRServer.center_on_hmd(XRServer.RESET_FULL_ROTATION, false)
-	_check(not XRServer.get_reference_frame().is_equal_approx(Transform3D.IDENTITY), "Test establishes a nonidentity XR reference frame")
-	_tick(bench)
-	_check(bench.live_sample.valid and bench.live_sample.unit.is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Provider joints ignore extra global reference frame and unrelated default palm pose")
-	XRServer.clear_reference_frame()
-	XRServer.primary_interface = previous_interface
-	XRServer.remove_interface(reference)
-	XRServer.world_scale = NAN
-	_tick(bench)
-	_check(not bench.content.visible and not bench.live_sample.valid and bench.get_node("%PinA").disabled and bench.readout.text.contains("world scale"), "Invalid XR scale hides the field and explains why sampling is unavailable")
-	_check(not bench._pins[0].visible and not bench.skeleton._joints.left[INDEX].visible, "Invalid scale cannot retain old pin or skeleton geometry")
-	XRServer.world_scale = 0.5
-	_tick(bench)
-	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
-	_tick(bench)
-	_check(bench.content.visible and bench.live_sample.valid and is_equal_approx(bench.field.global_basis.x.length() / XRServer.world_scale, bench.get_node("%Size").value), "Restoring a valid smaller world scale recovers physical size and live sampling")
-	bench.origin.transform = Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
-	_tick(bench)
-	_check(not bench.content.visible and not bench.live_sample.valid and bench.readout.text.contains("origin"), "Invalid tracking origin hides geometry and reports the origin error")
-	bench.origin.transform = Transform3D.IDENTITY
-	XRServer.world_scale = 1.0
-	bench.get_node("%Size").value = 0.3
-	bench.rotate_field(0.5235988)
-	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
-	_tick(bench)
-	_check(bench.live_sample.valid and bench.live_sample.unit.is_equal_approx(Vector3(0.625, 0.5, 0.5)), "Resized and rotated field keeps scalar sampling aligned to rendering")
-	var world_point: Vector3 = bench.hands.left.joints[INDEX]
-	bench.place_near_hand()
-	_check(bench._placement.is_equal_approx(world_point + Vector3(0, 0, -0.12)) and not bench.live_sample.valid, "Move-near-fingertip recenters from a fresh pose and clears the old candidate")
-	bench.reset_placement()
-	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
-	bench.step(1)
-	_tick(bench)
-	_check(document.frame == 1 and bench._frame == 1 and bench.readout.text.contains("No data in this cell"), "Frame changes refresh the selected cell and preserve explicit missing bytes")
-	_check(document.inspection.get_committed_points() == preserved, "Frame playback leaves committed field locations unchanged")
-	_check(bench.pinned_readout.text.contains("frame 2 / 4") and bench.pinned_readout.text.contains("A: No data · cell (2, 0, 0)") and bench.pinned_readout.text.contains("B: 0.0 Pa") and bench.pinned_readout.text.contains("B − A: place both probes on valid data"), "New frame updates committed cells and clears the numeric difference when a cell is missing")
-	document.touch.set_brick(PackedByteArray(), Vector3i.ZERO, 255)
-	_tick(bench)
-	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled and bench.readout.text.contains("unavailable"), "Unavailable scalar payload disables pinning instead of retaining a stale value")
-	_check(bench.pinned_readout.text.contains("A: No data (current scalar frame unavailable)") and bench.pinned_readout.text.contains("B: No data (current scalar frame unavailable)") and not bench.pinned_readout.text.contains("B: 0.0 Pa"), "Unavailable payload clears both committed values instead of retaining the preceding frame")
-	document.update_field()
-	bench.select_field(1)
-	_put(bench, "left", INDEX, Vector3(0.625, 0.5, 0.5))
-	_tick(bench)
-	_check(bench.live_sample.valid and bench.readout.text.contains("30.0 K") and bench._field == 1, "Distant anisotropic second field refits and uses its own scalar metadata")
-	_check(document.inspection.get_committed_points().is_empty() and second.field_index == 0, "Field switching clears only the owning document's old-field pins")
-	_check(bench.pinned_readout.text.contains("Temperature") and bench.pinned_readout.text.contains("A: not placed") and bench.pinned_readout.text.contains("B: not placed") and not bench.pinned_readout.text.contains("Pa"), "Field switch replaces metadata and clears readings from the old field")
-	bench.pin(0)
-	_check(bench.pinned_readout.text.contains("A: 30.0 K · cell (2, 0, 0)"), "Pinning the new field uses its own units and numerical range")
-	var final_pins: Dictionary = document.inspection.get_committed_points()
-	bench._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
-	_check(not bench.live_sample.valid and bench.get_node("%PinA").disabled, "Application suspension immediately clears live input")
-	_check(bench.pinned_readout.text.contains("A: 30.0 K"), "Suspension retains committed field readings separately from unavailable live hands")
-	bench.pin(1)
-	_check(document.inspection.get_committed_points() == final_pins, "Suspended workbench cannot commit new pins")
-	bench._notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
-	_tick(bench)
-	await _layout(bench)
-	var old_window: Window = bench.immersive
-	bench.stop()
-	_check(document.inspection.get_committed_points() == final_pins and not old_window.visible and not bench.panel.visible, "Stop closes windows immediately and preserves explicitly committed pins")
-	await _settle()
-	_check(not is_instance_valid(bench) and not is_instance_valid(old_window), "Stop frees immersive scene and its Window")
-	await _test_presentation(document, second)
-	var next := _bench(second)
-	second.hand_workbench = next
-	_check(next.start(second).is_empty(), "Stopping releases the singleton so another document can start")
+	_check(not second.immersive_button.button_pressed and transitions[0] == 0 and second.inspection.is_active(), "Rejected normal immersive toggle resets its button without a false transition or canceled placement")
+	var rejected := _tools(second)
+	_check(not rejected.start(second).is_empty(), "A second model's A/B request is rejected before entering the owned immersive space")
+	_check(not second.volume.is_immersive() and document.volume.is_immersive() and second.playing, "Rejected second-model tools preserve its playing clock and the first immersive owner")
+	_check(second.inspection.is_active() and second.inspection.get_points() == second_points and transitions[0] == 0, "Rejected A/B start preserves the contender's transient placement and emits no false transition")
+	second.volume._backend._camera.preview_camera_enabled = true
 	second.close()
 	await _settle()
-	_check(not is_instance_valid(next) and not is_instance_valid(second), "Document close also frees its active workbench")
+	# Losing native presentation clears tools, while main keeps control of its host.
+	api.presented = false
+	tools._process(0.0)
+	_check(tools._closed and document.hand_workbench == null and document.inspection.get_committed_points() == pins, "Lost native presentation closes only A/B controls and retains committed pins")
+	await _settle()
+	document.volume.set_immersive(false)
+	api.revision = 1
+	document.volume.set_immersive(true)
+	_check(document.volume.is_immersive() and not document.volume.has_safe_hand_tracking(), "Ordinary team immersion remains available with a stock/older addon")
+	var unsupported := _tools(document)
+	_check(not unsupported.start(document).is_empty(), "Continuous A/B pinning explains its stricter capability requirement")
+	unsupported.stop()
+	await _settle()
+	document.show_probe_history()
+	_check(document.history.visible, "Manual history remains available with an older addon")
+	document.volume.set_immersive(false)
+	# Native macOS preview cameras are detached when disabled; reattach the
+	# fixture-only preview before node cleanup (not a headset behavior).
+	host._camera.preview_camera_enabled = true
 	document.close()
 	await _settle()
-	_cleanup()
+	# Let the audio thread release stopped generator playbacks before this
+	# fast headless fixture exits; this is not a presentation delay in the app.
+	await create_timer(0.2).timeout
+	settings.sound = old_sound
+	for side in _trackers:
+		XRServer.remove_tracker(_trackers[side])
+		if _previous[side] != null:
+			XRServer.add_tracker(_previous[side])
+	_trackers.clear()
+	_previous.clear()
+	XRServer.world_scale = _world_scale
+	DirAccess.remove_absolute(source)
+	DirAccess.remove_absolute(_directory)
 	print("hand_workbench_test: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
-
-
-func _test_stale_publication(bench: Node, document: Node) -> void:
-	var published: PublishedHands = bench._native_api
-	var pins: Dictionary = document.inspection.get_committed_points()
-	var placement: Vector3 = bench._placement
-	# Simulate crossing the age limit between a valid UI frame and the click.
-	published.fresh[0] = false
-	bench.get_node("%PinB").pressed.emit()
-	_check(published.queried_window == bench.immersive.get_window_id(), "Freshness is requested for the workbench's own window")
-	_check(_trackers.left.has_tracking_data and _trackers.left.get_hand_joint_flags(INDEX) == FLAGS, "Expired left pose still has readable XR tracker flags in this fixture")
-	_check(document.inspection.get_committed_points() == pins and not document.history.result.is_empty(), "A click between expiry and native cleanup preserves existing pins and history")
-	_check(not bench.live_sample.valid and not bench.skeleton._joints.left[INDEX].visible and bench.skeleton._joints.right[INDEX].visible, "Only the expired hand disappears")
-	bench.place_near_hand()
-	_check(bench._placement == placement and bench.get_node("%NearHand").disabled, "An expired fingertip cannot move the field")
-	bench.select_hand(1)
-	_tick(bench)
-	_check(bench.live_sample.valid and bench.live_sample.unit.is_equal_approx(Vector3(0.875, 0.5, 0.5)), "The other hand can still sample the field")
-	published.fresh = [true, false]
-	bench.select_hand(0)
-	_tick(bench)
-	_check(bench.live_sample.valid and not bench.hands.right.tracked, "Newly published left data recovers while expired right data stays hidden")
-	published.fresh[1] = true
-
-
-func _test_presentation(document: Node, second: Node) -> void:
-	var pins: Dictionary = document.inspection.get_committed_points()
-	document.history.analyze()
-	await _wait_history(document.history)
-	var history: Dictionary = document.history.result.duplicate(true)
-	_check(not history.is_empty(), "Presentation tests begin with actual saved pins and analyzed history")
-	var waiting := _bench(document)
-	document.hand_workbench = waiting
-	waiting.presentation_ready = false
-	var failures: Array[String] = []
-	waiting.failed.connect(func(message: String) -> void: failures.append(message))
-	_check(waiting.start(document).is_empty(), "Opening starts while native presentation is still pending")
-	_put(waiting, "left", INDEX, Vector3(0.375, 0.5, 0.5))
-	_tick(waiting)
-	_check(not waiting._presented and not waiting.live_sample.valid and waiting.hands.is_empty(), "Pending presentation cannot consume stale global hand trackers")
-	_check(waiting.get_node("%PinA").disabled and waiting.get_node("%PinB").disabled and waiting.get_node("%NearHand").disabled, "Pending presentation disables both pins and near-fingertip placement")
-	_check(not waiting.skeleton._joints.left[INDEX].visible and not waiting._pins[0].visible, "Pending presentation hides skeleton and committed marker geometry")
-	var placement: Vector3 = waiting._placement
-	waiting.pin(0)
-	waiting.pin(1)
-	waiting.place_near_hand()
-	_check(document.inspection.get_committed_points() == pins and waiting._placement == placement and document.history.result == history, "Synchronous Pin and Move actions cannot bypass the presentation gate or invalidate history")
-	_check(not waiting.start(second).is_empty() and waiting.document == document, "A pending workbench cannot be restarted with a different document")
-	var contender := _bench(second)
-	_check(not contender.start(second).is_empty() and contender.document == null, "Pending presentation retains exclusive immersive ownership")
-	contender.free()
-	waiting._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
-	waiting._process(Fixture.PRESENTATION_TIMEOUT + 1.0)
-	_check(not waiting._closed and is_zero_approx(waiting._opening_elapsed) and failures.is_empty(), "Background time does not count toward native presentation timeout")
-	waiting._notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
-	waiting._process(0.25)
-	waiting._process(-1.0)
-	_check(is_equal_approx(waiting._opening_elapsed, 0.25), "Presentation timeout accumulates active time and ignores negative deltas")
-	waiting.presentation_ready = true
-	_tick(waiting)
-	_check(waiting._presented and waiting.live_sample.valid and is_zero_approx(waiting._opening_elapsed), "Confirmed presentation begins fresh sampling and clears the opening timer")
-	_trackers.left.has_tracking_data = false
-	_trackers.right.has_tracking_data = false
-	waiting._process(Fixture.PRESENTATION_TIMEOUT + 1.0)
-	_check(not waiting._closed and failures.is_empty() and not waiting.live_sample.valid, "Presented space with unavailable or denied tracking does not trigger an opening timeout")
-	waiting.presentation_ready = false
-	_tick(waiting)
-	_check(waiting._closed and not waiting.immersive.visible and not waiting.panel.visible and failures.is_empty(), "Losing an already presented space stops cleanly without an opening-timeout error")
-	_check(document.inspection.get_committed_points() == pins and document.history.result == history, "Presentation loss preserves saved probes and analyzed history")
-	await _settle()
-	_check(not is_instance_valid(waiting), "Presentation loss frees the old singleton instance")
-
-	var timed_out := _bench(document)
-	document.hand_workbench = timed_out
-	timed_out.presentation_ready = false
-	var outcomes: Array[Dictionary] = []
-	timed_out.failed.connect(func(message: String) -> void:
-		outcomes.append({message = message, closed = timed_out._closed, windows_hidden = not timed_out.immersive.visible and not timed_out.panel.visible}))
-	_check(timed_out.start(document).is_empty(), "A fresh instance retries after native presentation loss")
-	_put(timed_out, "left", INDEX, Vector3(0.375, 0.5, 0.5))
-	timed_out._process(Fixture.PRESENTATION_TIMEOUT)
-	_check(outcomes.size() == 1 and not outcomes[0].message.is_empty() and outcomes[0].closed and outcomes[0].windows_hidden, "Opening timeout closes windows before reporting one actionable failure")
-	timed_out.presentation_ready = true
-	timed_out._process(Fixture.PRESENTATION_TIMEOUT)
-	timed_out.pin(1)
-	_check(outcomes.size() == 1 and not timed_out.live_sample.valid and document.inspection.get_committed_points() == pins and document.history.result == history, "Late readiness cannot revive a timed-out session, commit a point, or repeat its error")
-	_check(not timed_out.start(document).is_empty(), "A timed-out instance cannot be reused")
-	await _settle()
-	_check(not is_instance_valid(timed_out), "Opening timeout releases the singleton after deferred deletion")
-
-	var retry := _bench(document)
-	document.hand_workbench = retry
-	_check(retry.start(document).is_empty(), "Retry uses a fresh workbench after timeout cleanup")
-	_put(retry, "left", INDEX, Vector3(0.375, 0.5, 0.5))
-	_tick(retry)
-	_check(retry.live_sample.valid and retry._presented, "Fresh retry samples the current hand when native presentation is confirmed")
-	retry.immersive.hide()
-	_check(retry._closed and not retry.panel.visible, "Native immersive visibility loss closes its accompanying panel")
-	await _settle()
-	var canceled := _bench(document)
-	document.hand_workbench = canceled
-	canceled.presentation_ready = false
-	var canceled_errors: Array[String] = []
-	canceled.failed.connect(func(message: String) -> void: canceled_errors.append(message))
-	_check(canceled.start(document).is_empty(), "Another pending presentation can be canceled explicitly")
-	canceled.stop()
-	canceled._process(Fixture.PRESENTATION_TIMEOUT + 1.0)
-	_check(canceled_errors.is_empty() and document.inspection.get_committed_points() == pins, "Explicit Return while opening does not produce a later timeout or erase pins")
-	await _settle()
-
-
-func _cleanup() -> void:
-	for hand in _trackers:
-		XRServer.remove_tracker(_trackers[hand])
-		if _prior_trackers[hand] != null:
-			XRServer.add_tracker(_prior_trackers[hand])
-	_trackers.clear()
-	XRServer.world_scale = _world_scale
-	for file in DirAccess.get_files_at(_directory):
-		DirAccess.remove_absolute(_directory.path_join(file))
-	DirAccess.remove_absolute(_directory)

@@ -37,7 +37,7 @@ theme_override_constants/separation = 12
 [node name="Help" type="Label" parent="Margin/Scroll/Column"]
 layout_mode = 2
 autowrap_mode = 3
-text = "Place A/B with Probe gestures, or set exact cells below. Analyze their values across all recorded frames."
+text = "Place A/B with Probe gestures, or set exact cells below. Analyze their values across this model’s frames. CSV export identifies the source step held at each displayed time."
 
 [node name="Readout" type="Label" parent="Margin/Scroll/Column"]
 unique_name_in_owner = true

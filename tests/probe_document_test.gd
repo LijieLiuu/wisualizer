@@ -2,7 +2,6 @@ extends SceneTree
 ## Real document scene integration, using in-memory scalar frames. These
 ## checks do not simulate native hand tracking or physical headset input.
 
-const Document := preload("res://app/document.tscn")
 const Meta := preload("res://app/meta.gd")
 const LONG_FIELD_NAME := "A long descriptive scalar field name used to inspect pressure around a complex geometry"
 
@@ -51,10 +50,12 @@ func _settle() -> void:
 
 
 func _document() -> Node:
-	var document := Document.instantiate()
+	var document: Node = load("res://app/document.tscn").instantiate()
 	var fixture := FixtureMeta.new()
 	fixture.title = "Probe integration fixture"
-	fixture.times = PackedFloat64Array([0.125, 0.25, 0.5])
+	var entry := Meta.Model.new()
+	entry.name = fixture.title
+	entry.times = PackedFloat64Array([0.125, 0.25, 0.5])
 	var pressure := Meta.Field.new()
 	pressure.name = LONG_FIELD_NAME
 	pressure.quantity = "Pressure"
@@ -69,11 +70,13 @@ func _document() -> Node:
 	temperature.range = Vector2(10, 30)
 	temperature.cells = Vector3i(4, 1, 1)
 	temperature.files = PackedStringArray(["temperature", "temperature", "temperature"])
-	fixture.fields.assign([pressure, temperature])
+	entry.fields.assign([pressure, temperature])
+	fixture.models.append(entry)
 	document.meta = fixture
 	root.add_child(document)
 	document.set_process(false)
 	_check(document.open("in-memory-fixture").is_empty(), "Real document scene opens in-memory frame metadata")
+	document.clock.set_process(false)
 	document.touch.set_process(false)
 	document.probes.set_process(false)
 	# Desktop tests exercise the same public mode controls without claiming
@@ -110,7 +113,7 @@ func _run() -> void:
 			_check(GDExtensionManager.load_extension(path) == GDExtensionManager.LOAD_STATUS_OK, "Load explicitly requested native event fixture")
 	var document := _document()
 	await _settle()
-	_check(document.playing, "Document initially plays frames")
+	_check(document.clock.playing, "Document initially plays frames")
 	_check(not document.probing and document.grab.input_ray_pickable and not document.probe_grab.input_ray_pickable, "Initial mode reserves model rotation collider")
 	document.yaw = 0.4
 	document.tilt = 0.2
@@ -120,7 +123,7 @@ func _run() -> void:
 	document._yaw_speed = 1.0
 	document.set_probe_mode(true)
 	await _settle()
-	_check(document.probing and document.probe_button.button_pressed and not document.playing, "Enabling probe mode pauses playback and updates its button")
+	_check(document.probing and document.probe_button.button_pressed and not document.clock.playing, "Enabling probe mode pauses playback and updates its button")
 	_check(document._drag == -1 and document._yaw_speed == 0.0 and document._yaw_target == document.yaw and document._tilt_target == document.tilt, "Probe mode ends rotation and freezes the shown orientation")
 	_check(not document.grab.input_ray_pickable and document.probe_grab.input_ray_pickable, "Probe mode exclusively selects the field collider")
 	_check(document.grab.get_node("Shape").disabled and not document.probe_grab.get_node("Shape").disabled, "Model collider is disabled while the field collider is active")
@@ -182,10 +185,14 @@ func _run() -> void:
 	_check(not document.probing and document.grab.input_ray_pickable and not document.probe_grab.input_ray_pickable, "Turning probing off restores rotation collider")
 	_check(not document.grab.get_node("Shape").disabled and document.probe_grab.get_node("Shape").disabled, "Turning probing off restores collision shapes")
 	_check(not document.probe_tools.visible and document.probes.inspection_points.is_empty(), "Turning probing off hides its controls and points")
-	document.debug_button.button_pressed = true
-	document.update_field()
+	var settings := root.get_node("Settings")
+	var prior_debug: bool = settings.debug
+	settings.debug = true
+	settings.changed.emit()
 	_check(document.probes.visible and document.probes.show_controllers, "Existing Debug controller visualization remains available")
-	document.meta.fields.clear()
+	settings.debug = prior_debug
+	settings.changed.emit()
+	document.entry.fields.clear()
 	document.set_probe_mode(true)
 	_check(not document.probing and document.touch.bytes.is_empty() and not document.probes.visible, "Documents with no scalar field cannot enter probing or retain old bytes")
 	document.free()
@@ -222,9 +229,6 @@ func _test_cancellation(document: Node, pins: Dictionary) -> void:
 	document.volume.resized.emit(Vector3.ONE * 2.0)
 	_assert_canceled(document, pins, "Volume resize")
 	_begin(document, Vector3.ONE * 0.2)
-	document.reset_turn()
-	_assert_canceled(document, pins, "Reset orientation")
-	_begin(document, Vector3.ONE * 0.2)
 	document.set_probe_mode(false)
 	_assert_canceled(document, pins, "Mode change")
 	document.set_probe_mode(true)
@@ -234,11 +238,10 @@ func _test_cancellation(document: Node, pins: Dictionary) -> void:
 func _test_layout(document: Node) -> void:
 	var options: Window = document.options
 	var bar: Control = options.get_node("Bar")
-	options.get_node("Bar/Reset").show()
 	# Exercise long names and units, two field buttons, and both native and
 	# desktop content scales. The same controls must stay inside the viewport.
-	document.meta.fields[0].name = LONG_FIELD_NAME
-	document.meta.fields[0].unit = "Pa (absolute)"
+	document.entry.fields[0].name = LONG_FIELD_NAME
+	document.entry.fields[0].unit = "Pa (absolute)"
 	document._refresh_inspection()
 	var long_field_button: Button
 	for control in bar.get_children():
@@ -256,7 +259,7 @@ func _test_layout(document: Node) -> void:
 			var host: Rect2 = document.model.get_visible_rect()
 			var ornament := Rect2(Vector2(options.position), Vector2(options.size))
 			_check(host.encloses(ornament), "Default desktop probe ornament stays wholly inside its model viewport")
-		_check(viewport.encloses(bar.get_rect()), "Toolbar fits logical viewport at content scale %s" % scale_factor)
+		_check(viewport.encloses(bar.get_rect()), "Toolbar fits logical viewport at scale %s: %s inside %s" % [scale_factor, bar.get_rect(), viewport])
 		_check(viewport.encloses(document.probe_tools.get_rect()), "Probe panel fits logical viewport at content scale %s" % scale_factor)
 		var readout: Rect2 = document.probe_readout.get_global_rect()
 		_check(viewport.encloses(readout), "Wrapped readout fits logical viewport at content scale %s" % scale_factor)
@@ -265,12 +268,12 @@ func _test_layout(document: Node) -> void:
 				_check(viewport.encloses(control.get_global_rect()), "%s control fits logical viewport at scale %s" % [control.name, scale_factor])
 		document.set_probe_mode(false)
 		await _settle()
-		_check(options.get_visible_rect().encloses(bar.get_rect()), "Normal options row still fits after disabling probing at scale %s" % scale_factor)
+		_check(options.get_visible_rect().encloses(bar.get_rect()), "Normal options row still fits after disabling probing at scale %s: %s inside %s" % [scale_factor, bar.get_rect(), options.get_visible_rect()])
 		document.set_probe_mode(true)
 		await _settle()
 	options.content_scale_factor = 1.0
-	document.meta.fields[0].name = "Pressure"
-	document.meta.fields[0].unit = "Pa"
+	document.entry.fields[0].name = "Pressure"
+	document.entry.fields[0].unit = "Pa"
 	document._refresh_inspection()
 	await _settle()
 
@@ -290,16 +293,15 @@ func _test_native_route(document: Node) -> void:
 		print("SKIP: document native event routing; RealityKit event classes are not installed.")
 		return
 	document.set_playing(true)
-	# A pinch beginning immediately after Reset must freeze the currently
-	# shown orientation before it acquires a spatial movement baseline.
-	document.reset_turn()
+	# An in-progress orientation change must stop at the displayed position.
+	document._yaw_target = document.yaw + 0.4
 	var yaw_before: float = document.yaw
 	var tilt_before: float = document.tilt
 	var hit: Vector3 = document.field.global_transform * (Vector3.ONE * 0.5)
 	var press := _native_event("InputEventSpatialTouch", 900, Vector3.ZERO)
 	document.probe_grab.emit_signal("input_event", document.volume, press, hit, Vector3.UP, 0)
-	_check(document.inspection.is_active() and not document.playing, "Native field collider signal begins probing and pauses playback")
-	_check(document._yaw_target == yaw_before and document._tilt_target == tilt_before, "Native pinch after Reset freezes the shown model before sampling")
+	_check(document.inspection.is_active() and not document.clock.playing, "Native field collider signal begins probing and pauses playback")
+	_check(document._yaw_target == yaw_before and document._tilt_target == tilt_before, "Native pinch freezes the shown model before sampling")
 	document.grab.emit_signal("input_event", document.volume, press, hit, Vector3.UP, 0)
 	_check(document._drag == -1, "Rotation handler ignores a native touch while probe mode owns input")
 	var release := _native_event("InputEventSpatialTouch", 900, Vector3.ZERO, false)
@@ -319,11 +321,11 @@ func _test_framing() -> void:
 	var other := _document()
 	var frames := FixtureFrames.new()
 	document.content.add_child(frames)
-	document.models.append(frames)
+	document.parts.append(frames)
 	var other_frames := FixtureFrames.new()
 	other_frames.bounds = AABB(Vector3.ZERO, Vector3(7, 9, 11))
 	other.content.add_child(other_frames)
-	other.models.append(other_frames)
+	other.parts.append(other_frames)
 	document.fit()
 	var first_shape: BoxShape3D = document.grab.get_node("Shape").shape
 	var second_shape: BoxShape3D = other.grab.get_node("Shape").shape
@@ -331,8 +333,8 @@ func _test_framing() -> void:
 	other.fit()
 	_check(first_shape.size == Vector3(2, 2, 2) and second_shape.size == Vector3(7, 9, 11), "Fitting another document cannot resize this document's rotation collider")
 	var ordinary_size: float = document.volume.size
-	document.meta.fields[0].box = Transform3D(Basis(Vector3.UP, 0.4) * Basis.from_scale(Vector3(4, 3, 2)), Vector3(8, -4, 3))
-	document.meta.fields[1].box = Transform3D(Basis.from_scale(Vector3(2, 3, 4)), Vector3(-20, 8, -4))
+	document.entry.fields[0].box = Transform3D(Basis(Vector3.UP, 0.4) * Basis.from_scale(Vector3(4, 3, 2)), Vector3(8, -4, 3))
+	document.entry.fields[1].box = Transform3D(Basis.from_scale(Vector3(2, 3, 4)), Vector3(-20, 8, -4))
 	document.update_field()
 	_check(not _field_fits(document), "Framing fixture's scalar field extends outside ordinary model framing")
 	document.yaw = 0.6
@@ -346,20 +348,20 @@ func _test_framing() -> void:
 	_check(second_shape.size == Vector3(7, 9, 11), "Probe refitting never changes another document's collider")
 	document.set_probe_mode(false)
 	_check(is_equal_approx(document.volume.size, ordinary_size), "Leaving probe mode restores ordinary model framing")
-	var supported_box: Transform3D = document.meta.fields[0].box
+	var supported_box: Transform3D = document.entry.fields[0].box
 	var sheared_box := Transform3D(Basis(Vector3(2, 0, 0), Vector3(0.5, 2, 0), Vector3(0, 0, 2)), Vector3.ZERO)
 	document.field_index = 0
-	document.meta.fields[0].box = sheared_box
+	document.entry.fields[0].box = sheared_box
 	document.update_field()
 	document.set_probe_mode(true)
 	_check(not document.probing and document.probe_button.disabled and document.probe_button.tooltip_text.contains("sheared"), "Sheared field axes reject probe mode with an explicit explanation")
-	document.meta.fields[0].box = supported_box
+	document.entry.fields[0].box = supported_box
 	document.update_field()
 	document.set_probe_mode(true)
 	_check(document.probing, "Rotation and nonuniform orthogonal scale remain supported")
 	_pin(document, 0, Vector3.ONE * 0.5)
 	_begin(document, Vector3.ONE * 0.6)
-	document.meta.fields[1].box = sheared_box
+	document.entry.fields[1].box = sheared_box
 	document.field_index = 1
 	document.update_field()
 	_check(not document.probing and not document.inspection.is_active() and document.inspection.get_points().is_empty(), "Changing to a sheared field cancels movement, removes pins and exits probe mode")
@@ -374,7 +376,7 @@ func _test_framing() -> void:
 
 func _field_fits(document: Node) -> bool:
 	var half_size: Vector3 = document.volume.get_region_size() * 0.5
-	var box: Transform3D = document.meta.fields[document.field_index].box
+	var box: Transform3D = document.entry.fields[document.field_index].box
 	# Use Godot's independently enumerated AABB corners, including nonuniform
 	# scale, and check the actual rotated scene against the visible volume.
 	var unit := AABB(Vector3.ZERO, Vector3.ONE)

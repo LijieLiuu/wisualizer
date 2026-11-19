@@ -48,73 +48,45 @@ contains the matching engine template. Release export requires separately
 building and installing `scons config=release`; a debug-only addon is insufficient.
 Binaries, SDKs, generated Xcode projects and signing settings stay local.
 
-## Interaction and permission
+## Using the model's immersive space
 
-On Vision Pro, open a scalar-field document and choose **Options → Track
-fingers…**. This opens a mixed immersive space and a separate controls window.
-Only one document can own this space at a time. Opening it pauses playback and
-ends the shared-volume probe gesture; existing committed A/B locations remain.
-Sampling starts only after the addon confirms that visionOS actually presented
-the space. If opening does not finish within 15 active seconds, the workbench
-closes with a retry message. This also handles rapid reopening while visionOS
-is still dismissing the previous space.
+Open a model with a scalar field on Vision Pro and choose **Options → Track
+fingers…**. This enters the model's immersive space or uses it if already open.
+The model keeps its drag handle, rotation, field picker, playback controls and
+fingertip sound. The hand controls appear below the field picker in Options.
+Choose **Track fingers…** again to close those controls. The library's **Settings**
+window controls debug markers and the sounds under the two index fingers.
 
-Apple exposes ARKit hand data in a [Full Space](https://developer.apple.com/documentation/visionos/setting-up-access-to-arkit-data),
-which hides other applications. Mixed immersion keeps the surroundings visible.
-The project enables `xr/visionos/enable_hand_tracking` and supplies an explicit
-`NSHandsTrackingUsageDescription` in its export preset. Allow hand tracking when
-visionOS asks. If unavailable or denied, the controls show no tracked hands and
-disable pinning. **Return to windows** remains available; existing gesture probes
-and manual cell selection can be used in the shared windows.
+Select a hand and fingertip and move it into the field. Choose **Pin A** or
+**Pin B** to keep its current position in field coordinates. Each click
+samples the selected finger again. Moving the model, changing playback time
+or briefly losing tracking preserves the two locations. The readout reports
+the cell and value at each location and computes **B − A** when both contain
+data. Switching to a different field clears the previous pair.
 
-- Select the left or right hand and any fingertip. Both tracked skeletons remain
-  visible, with the selected finger highlighted.
-- Move that fingertip inside the field box to read the current cell's scalar
-  value. Missing cells show **No data**; a valid physical zero remains a value.
-- Use the other hand to choose **Pin A** or **Pin B**. Each click reads the current
-  joint again. The controls show each pinned location's cell and scalar value,
-  and **B − A** when both cells have data. Stepping through frames updates
-  these readings at the saved locations. You can still compare them after
-  moving your fingertip or losing hand tracking.
-- **History and export…** opens the existing inspector for frame histories, CSV
-  export and saved probe positions. Playback controls inspect the same field
-  locations in other frames.
-- Adjust the field extent, rotate it, or choose **Move near fingertip** to bring
-  it within reach. These controls move the field independently of the tracked
-  hands. **Reset placement** restores its initial position.
-- **Return to windows**, closing either hand-inspection window, or closing the
-  document stops the workbench. Returning to windows preserves committed points.
+Open **Inspect…** to chart those points over the model timeline, export a
+CSV, or save the positions for the same ZIP and model. Other volumes from
+the ZIP follow the shared playback clock and keep their own probes.
 
-## API and coordinate contract
+Apple provides ARKit hand data in a [Full Space](https://developer.apple.com/documentation/visionos/setting-up-access-to-arkit-data).
+The application requests hand-tracking permission through
+`NSHandsTrackingUsageDescription`. If the selected hand or joint is
+unavailable, fingertip placement is disabled. The inspector can also place
+probes by cell index. Use the model's immersive control to return to its
+ordinary volume.
 
-The upstream [HandAnchors provider](https://github.com/zilongpa/plugins-for-godot/blob/fbfdaaeddd5899bfcae109eecbed253937c84aa4/godotrealitykit/GodotRealityKit/RealityKit/HandAnchors.swift)
-publishes `/user/hand_tracker/left` and `/user/hand_tracker/right` through
-`XRServer`. There are 26 Godot joint slots: 25 directly mapped ARKit wrist/finger
-joints and a derived palm. This app uses only positions with both
-`POSITION_VALID` and `POSITION_TRACKED`, after checking `has_tracking_data`.
-The derived palm is not advertised or displayed as a tracked measurement.
-The API does not supply per-joint timestamps, radii, velocities or numerical
-confidence; the app does not synthesize those as measurements.
+## Coordinates
 
-Joint transforms already include the hand-anchor transform. The matching
-provider removes the immersive window's orthonormal tracking origin and world
-scale. The app reverses those operations once:
-
-```text
-world_point = orthonormal(origin.global_transform) * (joint.origin * XRServer.world_scale)
-field_unit = inverse(field.global_transform) * world_point
-```
-
-Neither the default palm pose nor `XRServer.reference_frame` is applied again.
-Only finite coordinates in the half-open field cube `[0, 1)` can be sampled.
-Physical size and placement controls account for `XRServer.world_scale`.
-Sheared field axes remain unavailable because the native renderer cannot
-preserve that transform. Rotated fields and nonuniform orthogonal axes work.
-
-The immersive `Window` owns its 3D world and contains an `XROrigin3D` and
-`XRCamera3D` before it becomes visible. It contains no `SpatialVolume3D` or
-`RealityVolumeCamera3D`; these would select a different native host. Its models
-use independent frame readers rather than reparenting a live shared-volume model.
+GodotRealityKit publishes the left and right hands through the standard
+`XRHandTracker` API. Joint coordinates already include the hand anchor.
+The volume backend maps the joint into the model window's world. The selected
+field's inverse global transform maps the resulting point into its unit cube,
+which includes the lower faces and excludes the upper faces. A/B locations
+are stored in that cube so they follow rotations, translations and changes
+of scale. The addon exposes tracking flags for individual joints and treats
+the derived palm separately. Fingertip placement uses only tracked, valid,
+finite positions. A sheared field is unavailable for hand placement because
+the native renderer cannot preserve its transform.
 
 ## Tracking loss and validation
 
@@ -125,7 +97,7 @@ left, 1 for right). This checks the active view and the ARKit source time
 of the pose published to that hand's Godot tracker. A sample older than
 0.25 seconds is unavailable even if ARKit has delivered a newer anchor that
 the renderer has yet to publish. The same check protects Pin A, Pin B and
-Move near fingertip between periodic cleanup ticks. Each native view has its own ownership
+the live fingertip readout between periodic cleanup ticks. Each native view has its own ownership
 identity, so delayed cleanup or updates from an old view cannot alter a new
 view's global trackers. Hosts rejected before presentation are also cleaned up.
 Loss, provider failure, permission denial, suspension and window closure clear
@@ -141,10 +113,10 @@ Using that same epoch for `AnchorUpdate.timestamp` is an inference from the
 hand-tracking API contract; confirm timestamp freshness on the physical device.
 
 The [test commands](../README.md#tests) cover joint validity, partial hands,
-coordinate transforms, loss/recovery, renderer reuse, field boundaries, missing
-versus zero, fresh pin sampling, history preservation, document isolation,
-physical scaling, window cleanup and scrollable controls. Patch installer tests
-use local Git fixtures and require neither network access nor an Apple SDK.
+coordinate transforms, tracking loss and recovery, and fresh pin sampling.
+Integration fixtures exercise the drag handle, stereo sound, joint markers,
+per-model history, shared playback, held source frames and window cleanup.
+Patch installer tests use local Git fixtures and run offline.
 
 Desktop fixtures verify application behavior with synthetic joint positions.
 Native compilation and unsigned export validate the integration but do not

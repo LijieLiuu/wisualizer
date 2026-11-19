@@ -11,36 +11,33 @@ config_version=5
 [application]
 
 config/name="Wisualizer"
-run/main_scene="res://app/launcher.tscn"
 config/version="0.1"
+run/main_scene="res://app/launcher.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
+boot_splash/bg_color=Color(0.0666667, 0.12549, 0.188235, 1)
+boot_splash/stretch_mode=4
+boot_splash/image="res://branding/splash.png"
 config/icon="res://branding/icon.png"
 config/icon.macos="res://branding/icon_macos.png"
-boot_splash/bg_color=Color(0.0666667, 0.12549, 0.188235, 1)
-boot_splash/image="res://branding/splash.png"
-boot_splash/stretch_mode=4
 run/main_loop_type.visionos="RealitySceneTree"
 
 [autoload]
 
 SpatialWindows="*res://addons/spatial/spatial_windows.gd"
+Settings="*res://app/settings.gd"
 
 [display]
 
 window/size/viewport_width=800
 window/size/viewport_height=1040
+window/subwindows/embed_subwindows=false
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/stretch/scale=2.0
-window/subwindows/embed_subwindows=false
 
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/GodotRealityKit/plugin.cfg")
-
-[reality_kit]
-
-presentation_style="2D Window"
 
 [gui]
 
@@ -67,6 +64,10 @@ next_frame={
 [physics]
 
 3d/physics_engine="Jolt Physics"
+
+[reality_kit]
+
+presentation_style="2D Window"
 
 [rendering]
 

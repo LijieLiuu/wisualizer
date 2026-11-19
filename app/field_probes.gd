@@ -10,6 +10,7 @@ const FONT_SIZE := 48
 ## The label's height and its gap above the cube, in meters.
 const LABEL_HEIGHT := 0.02
 const LABEL_GAP := 0.01
+const JOINT_SIZE := 0.008
 
 var touch: Node
 var volume: SpatialVolume3D
@@ -19,6 +20,10 @@ var shown_field: Meta.Field
 ## Slot 0 (A) and slot 1 (B), each in the field's unit coordinates.
 var inspection_points: Dictionary = {}
 var show_controllers := true
+var show_hands := true
+var selected_hand := ""
+var selected_joint := XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP
+var _joints := MultiMeshInstance3D.new()
 
 var _colors := Gradient.new()
 ## Stable source key to its cube and label. Removed sources are discarded,
@@ -29,6 +34,19 @@ var _probes := {}
 func _init() -> void:
 	_colors.offsets = PackedFloat32Array([0.0, 0.25, 0.5, 0.75, 1.0])
 	_colors.colors = PackedColorArray([Color(0, 0, 1), Color(0, 1, 1), Color(0, 1, 0), Color(1, 1, 0), Color(1, 0, 0)])
+	var dot := SphereMesh.new()
+	dot.radius = 0.5
+	dot.height = 1.0
+	dot.radial_segments = 8
+	dot.rings = 4
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color.WHITE
+	dot.material = material
+	_joints.multimesh = MultiMesh.new()
+	_joints.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	_joints.multimesh.mesh = dot
+	add_child(_joints)
 
 
 func _process(_delta: float) -> void:
@@ -59,6 +77,18 @@ func update_probes() -> void:
 			# Controllers keep their existing behavior: missing cells are silent.
 			if touch.byte_of(cell) != 0:
 				sources[controller.get_instance_id()] = {cell = cell, title = ""}
+	var snapshots := {}
+	if show_hands:
+		for hand in volume.get_hands():
+			var snapshot := volume.get_hand_snapshot(hand)
+			snapshots[hand] = snapshot
+			var side := "left" if hand.hand == XRPositionalTracker.TRACKER_HAND_LEFT else "right"
+			var joint := selected_joint if side == selected_hand else XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP
+			if snapshot.joints.has(joint):
+				var cell: Vector3i = touch.cell_at(snapshot.joints[joint])
+				if touch.byte_of(cell) != 0:
+					sources[hand.get_instance_id()] = {cell = cell, title = ""}
+	_show_joints(snapshots, meters_per_unit)
 	for slot in [0, 1]:
 		var point: Variant = inspection_points.get(slot)
 		if not point is Vector3 or not (point as Vector3).is_finite():
@@ -95,6 +125,7 @@ func _meters_per_unit() -> float:
 
 
 func _clear_visuals() -> void:
+	_joints.multimesh.instance_count = 0
 	for key in _probes.keys():
 		_remove_probe(key)
 
@@ -121,6 +152,8 @@ func _add_probe() -> Dictionary:
 	var label := Label3D.new()
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
+	label.render_priority = RenderingServer.MATERIAL_RENDER_PRIORITY_MAX
+	label.outline_render_priority = RenderingServer.MATERIAL_RENDER_PRIORITY_MAX - 1
 	label.font_size = FONT_SIZE
 	label.outline_size = 12
 	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
@@ -153,3 +186,16 @@ func _show(probe: Dictionary, cell: Vector3i, title: String, meters_per_unit: fl
 	if shown_field and not shown_field.quantity.is_empty():
 		heading += shown_field.quantity + "\n"
 	label.text = heading + "(%.1f, %.1f, %.1f)\n%s" % [center.x, center.y, center.z, reading]
+
+
+## Reuse the team's single joint MultiMesh, omitting every invalid joint.
+func _show_joints(snapshots: Dictionary, meters_per_unit: float) -> void:
+	var points: Array[Vector3] = []
+	for snapshot: Dictionary in snapshots.values():
+		for point: Vector3 in snapshot.joints.values():
+			points.append(point)
+	_joints.multimesh.instance_count = points.size()
+	var dot := Basis.from_scale(Vector3.ONE * JOINT_SIZE / meters_per_unit)
+	var inverse := global_transform.affine_inverse()
+	for index in points.size():
+		_joints.multimesh.set_instance_transform(index, Transform3D(inverse.basis * dot, inverse * points[index]))

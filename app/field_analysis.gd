@@ -4,7 +4,7 @@ extends RefCounted
 
 const Meta := preload("res://app/meta.gd")
 const ScalarData := preload("res://app/scalar_data.gd")
-const COLUMNS := ["field", "quantity", "unit", "frame", "solver_time", "source_file", "valid_count", "missing_count", "min", "max", "mean"]
+const COLUMNS := ["field", "quantity", "unit", "frame", "solver_time", "source_file", "valid_count", "missing_count", "min", "max", "mean", "model_index", "model", "field_index", "source_step", "source_time", "source_static"]
 
 
 static func summarize(data: PackedByteArray, value_range: Vector2, cells: Vector3i) -> Dictionary:
@@ -52,39 +52,65 @@ func export_draft(draft, target: String) -> String:
 	var zip_path: String = draft.source_zip_path()
 	if not zip_path.is_empty():
 		protected.append(zip_path)
-	return _export(draft.fields, draft.times,
-		func(field, frame: int) -> Dictionary: return draft.read_brick_checked(field, frame),
-		func(field, frame: int) -> String: return str(field.bricks.get(frame, "")).trim_prefix("zip://"),
+	var groups := []
+	for index in draft.models.size():
+		var model = draft.models[index]
+		groups.append({model_index = index, name = model.name, fields = model.fields, times = model.times()})
+	return _export(groups,
+		func(group: Dictionary, field, frame: int) -> Dictionary: return draft.read_brick_checked(field, group.times[frame], frame),
+		func(group: Dictionary, field, frame: int) -> Dictionary: return _draft_source(field, group.times[frame], frame),
 		target, protected)
 
 
-## Export an existing package, reading at most one scalar frame at a time.
+static func _draft_source(field, time: float, frame: int) -> Dictionary:
+	var path: String = field.source_at(time, frame)
+	if path.is_empty():
+		return {source_file = "", source_step = null, source_time = null, source_static = false}
+	if field.untimed:
+		return {source_file = path.trim_prefix("zip://"), source_step = 1, source_time = null, source_static = true}
+	if field.indexed_frames:
+		return {source_file = path.trim_prefix("zip://"), source_step = frame + 1, source_time = time, source_static = false}
+	var times := PackedFloat64Array(field.bricks.keys())
+	times.sort()
+	var step := Meta.step_at(times, time)
+	return {source_file = path.trim_prefix("zip://"), source_step = step + 1,
+		source_time = null if field.untimed else times[step], source_static = field.untimed}
+
+
+## Export every model independently, reading at most one scalar frame at a time.
 func export_zip(zip_path: String, target: String) -> String:
 	var meta := Meta.new()
 	var error: String = meta.open(zip_path)
 	if not error.is_empty():
 		meta.close()
 		return error
-	error = _export(meta.fields, meta.times,
-		func(field, frame: int) -> Dictionary: return meta.read_checked(field.files[frame]),
-		func(field, frame: int) -> String: return field.files[frame],
+	var groups := []
+	for index in meta.models.size():
+		var model = meta.models[index]
+		groups.append({model_index = index, name = model.name, fields = model.fields, times = model.times})
+	error = _export(groups,
+		func(_group: Dictionary, field, frame: int) -> Dictionary: return meta.read_checked(field.files[frame]),
+		func(_group: Dictionary, field, frame: int) -> Dictionary: return Meta.frame_source(field, frame),
 		target, PackedStringArray([zip_path]))
 	meta.close()
 	return error
 
 
-func _export(fields: Array, times: PackedFloat64Array, read: Callable, source: Callable, target: String, protected: PackedStringArray) -> String:
-	if fields.is_empty():
+func _export(groups: Array, read: Callable, source: Callable, target: String, protected: PackedStringArray) -> String:
+	var count := 0
+	for group in groups:
+		count += group.fields.size()
+		if not group.fields.is_empty() and group.times.is_empty():
+			return "Add a frame before exporting statistics."
+		for time in group.times:
+			if not is_finite(time):
+				return "Every solver time must be finite."
+		for field in group.fields:
+			var problem: String = ScalarData.validate_metadata(field.range, field.cells)
+			if not problem.is_empty():
+				return "%s: %s" % [field.name, problem]
+	if count == 0:
 		return "Add a scalar field before exporting statistics."
-	if times.is_empty():
-		return "Add a frame before exporting statistics."
-	for time in times:
-		if not is_finite(time):
-			return "Every solver time must be finite."
-	for field in fields:
-		var problem: String = ScalarData.validate_metadata(field.range, field.cells)
-		if not problem.is_empty():
-			return "%s: %s" % [field.name, problem]
 	var destination := _destination(target, protected)
 	if not destination.error.is_empty():
 		return destination.error
@@ -98,26 +124,31 @@ func _export(fields: Array, times: PackedFloat64Array, read: Callable, source: C
 	var error := ""
 	if _write_row(output, PackedStringArray(COLUMNS)) != OK:
 		error = "Couldn't write the statistics header."
-	for field in fields:
+	for group in groups:
 		if not error.is_empty():
 			break
-		for frame in times.size():
-			var loaded: Dictionary = read.call(field, frame)
-			if not loaded.error.is_empty():
-				error = "%s, frame %d: %s" % [field.name, frame + 1, loaded.error]
+		for field_index in group.fields.size():
+			if not error.is_empty():
 				break
-			var summary := summarize(loaded.bytes, field.range, field.cells)
-			# Release this frame before reading the next one.
-			loaded.clear()
-			if not summary.error.is_empty():
-				error = "%s, frame %d: %s" % [field.name, frame + 1, summary.error]
-				break
-			var row := PackedStringArray([str(field.name), str(field.quantity), str(field.unit), str(frame + 1),
-				_number(times[frame]), str(source.call(field, frame)), str(summary.valid_count), str(summary.missing_count),
-				_number(summary.min), _number(summary.max), _number(summary.mean)])
-			if _write_row(output, row) != OK:
-				error = "Couldn't write statistics for %s, frame %d." % [field.name, frame + 1]
-				break
+			var field = group.fields[field_index]
+			for frame in group.times.size():
+				var loaded: Dictionary = read.call(group, field, frame)
+				if not loaded.error.is_empty():
+					error = "%s, frame %d: %s" % [field.name, frame + 1, loaded.error]
+					break
+				var summary := summarize(loaded.bytes, field.range, field.cells)
+				loaded.clear()
+				if not summary.error.is_empty():
+					error = "%s, frame %d: %s" % [field.name, frame + 1, summary.error]
+					break
+				var origin: Dictionary = source.call(group, field, frame)
+				var row := PackedStringArray([str(field.name), str(field.quantity), str(field.unit), str(frame + 1),
+					_number(group.times[frame]), origin.source_file, str(summary.valid_count), str(summary.missing_count),
+					_number(summary.min), _number(summary.max), _number(summary.mean), str(group.model_index), group.name,
+					str(field_index), _number(origin.source_step), _number(origin.source_time), _number(origin.source_static)])
+				if _write_row(output, row) != OK:
+					error = "Couldn't write statistics for %s, frame %d." % [field.name, frame + 1]
+					break
 	if error.is_empty() and _flush(output) != OK:
 		error = "Couldn't finish writing the statistics file."
 	output.close()

@@ -6,11 +6,14 @@ extends RefCounted
 ## Each GLB, brick and image is a source: a path on disk, or a path in the
 ## opened ZIP with the [constant IN_ZIP] prefix. Sources are copied as they
 ## are when the draft is saved; nothing is decoded.
+##
+## A model derives its timeline from its parts and fields. A legacy ZIP with
+## repeated or unordered times keeps the explicit frames it was authored with.
 
 const Meta := preload("res://app/meta.gd")
 const GLBInfo := preload("res://app/glb_info.gd")
-const BOV := preload("res://app/bov.gd")
 const ScalarData := preload("res://app/scalar_data.gd")
+const BOV := preload("res://app/bov.gd")
 const NotesImages := preload("res://app/notes_images.gd")
 const IN_ZIP := "zip://"
 const NOTES_FILE := "notes.txt"
@@ -19,17 +22,20 @@ const ATTACHMENTS_FOLDER := "attachments"
 const COPY_CHUNK := 1 << 20
 ## ZIPReader returns a PackedByteArray; keep saved files readable on reopen.
 const MAX_FILE_SIZE := 0x7fffffff
+const MODELS_FOLDER := "models"
 ## Saving writes beside the target first, so a failure leaves the old ZIP.
 const TEMPORARY_SUFFIX := ".saving"
 
 
-class Model:
+class Part:
 	var name := ""
-	## One source, shown at every frame, or one per frame.
+	## Its GLBs in time order, with each one's solver time; or one GLB with no
+	## time, for a part that doesn't change.
 	var files := PackedStringArray()
+	var times := PackedFloat64Array()
 
 	func changes() -> bool:
-		return files.size() > 1
+		return not times.is_empty()
 
 
 class Field:
@@ -41,17 +47,90 @@ class Field:
 	var origin := Vector3.ZERO
 	var size := Vector3.ONE
 	var axes := Basis()
-	## The brick source at each frame that has one.
+	## Its bricks by solver time.
 	var bricks := {}
+
+	## A single untimed brick contributes no time to a model's timeline.
+	var untimed := false
+	## A flat archive with repeated or out-of-order times identifies bricks by frame.
+	var indexed_frames := false
+
+	func source_at(time: float, frame := -1) -> String:
+		if indexed_frames:
+			return bricks.get(frame, "")
+		if bricks.is_empty() or not is_finite(time):
+			return ""
+		var steps := PackedFloat64Array(bricks.keys())
+		steps.sort()
+		return bricks[steps[Meta.step_at(steps, time)]]
+
+	## The time among its bricks' that is [param time], or [param time].
+	func key_for(time: float) -> float:
+		for at: float in bricks:
+			if Meta.same_time(at, time):
+				return at
+		return time
+
+
+class PointLabel:
+	var text := ""
+	var position := Vector3.ZERO
+	## 0 for the default.
+	var radius := 0.0
+	## The first and last solver times it shows at; -INF and INF reach the
+	## ends of the timeline, however it grows.
+	var span := Vector2(-INF, INF)
+
+	## The first line of its text, to list it by.
+	func title() -> String:
+		var line := text.strip_edges().get_slice("\n", 0)
+		return line if not line.is_empty() else "(no text)"
+
+
+class Model:
+	var name := ""
+	var parts: Array[Part] = []
+	var fields: Array[Field] = []
+	var labels: Array[PointLabel] = []
+	var first_field := 0
+	var legacy_times := PackedFloat64Array()
+
+	## The solver time of each frame: every time its parts and fields have.
+	func times() -> PackedFloat64Array:
+		if not legacy_times.is_empty():
+			return legacy_times.duplicate()
+		var all := PackedFloat64Array()
+		for part in parts:
+			all.append_array(part.times)
+		for field in fields:
+			if not field.untimed:
+				all.append_array(PackedFloat64Array(field.bricks.keys()))
+		return Meta.timeline(all)
+
+	## The frames, counted from 0, that [param label] shows at, as [first,
+	## last]; last is below first if it shows at none.
+	func label_frames(label: PointLabel) -> Vector2i:
+		var frames := times()
+		var first := frames.size()
+		var last := -1
+		for index in frames.size():
+			var time := frames[index]
+			var after_first := time >= label.span.x or Meta.same_time(time, label.span.x)
+			var before_last := time <= label.span.y or Meta.same_time(time, label.span.y)
+			if after_first and before_last:
+				first = mini(first, index)
+				last = index
+		return Vector2i(first, last)
+
+	## The span that shows [param label] from frame [param first] to frame
+	## [param last], counted from 0; the ends of the timeline stay open.
+	func span_of(first: int, last: int) -> Vector2:
+		var frames := times()
+		return Vector2(-INF if first <= 0 else frames[first], INF if last >= frames.size() - 1 else frames[last])
 
 
 var title := ""
-var times := PackedFloat64Array()
-## A provisional single frame created by importing a static model.
-var auto_frame := false
 var models: Array[Model] = []
-var fields: Array[Field] = []
-var first_field := 0
 var notes := ""
 ## Keep the original notes location so relative links survive a round trip.
 var notes_path := NOTES_FILE
@@ -66,7 +145,7 @@ var _zip_entries := {}
 ## A ZIPReader reads one file at a time: the notes preview may read while a
 ## save does.
 var _zip_lock := Mutex.new()
-## Model bounds by GLB source, once read.
+## Bounds by GLB source, once read.
 var _bounds := {}
 
 
@@ -92,11 +171,12 @@ func open(zip_path: String) -> String:
 		return "Couldn't read %s." % zip_path
 	var used := {Meta.MANIFEST: true}
 	for entry in meta.models:
-		for file in entry.files:
-			used[file] = true
-	for entry in meta.fields:
-		for file in entry.files:
-			used[file] = true
+		for part in entry.parts:
+			for file in part.step_files:
+				used[file] = true
+		for field in entry.fields:
+			for file in field.step_files:
+				used[file] = true
 	if not meta.notes.is_empty():
 		used[meta.notes] = true
 	for file in meta.attachments:
@@ -111,38 +191,59 @@ func open(zip_path: String) -> String:
 	_zip_entries = meta.entries.duplicate(true)
 	_zip_lock.unlock()
 	title = meta.title
-	times = meta.times.duplicate()
-	auto_frame = false
 	models = []
-	fields = []
 	images = {}
 	attachments = {}
 	_bounds.clear()
 	for entry in meta.models:
 		var model := Model.new()
 		model.name = entry.name
-		# A model shown at every frame has the same file at each.
-		var files := entry.files if entry.files.count(entry.files[0]) < entry.files.size() else PackedStringArray([entry.files[0]])
-		for file in files:
-			model.files.append(IN_ZIP + file)
+		if meta.legacy and entry.times != Meta.timeline(entry.times):
+			model.legacy_times = entry.times.duplicate()
+		for part_entry in entry.parts:
+			var part := Part.new()
+			part.name = part_entry.name
+			part.times = part_entry.step_times.duplicate()
+			for file in part_entry.step_files:
+				part.files.append(IN_ZIP + file)
+			model.parts.append(part)
+		for field_entry in entry.fields:
+			var field := Field.new()
+			field.name = field_entry.name
+			field.quantity = field_entry.quantity
+			field.unit = field_entry.unit
+			field.range = field_entry.range
+			field.cells = field_entry.cells
+			field.origin = field_entry.box.origin
+			field.size = field_entry.size
+			field.axes = field_entry.axes
+			field.indexed_frames = not model.legacy_times.is_empty()
+			field.untimed = field_entry.step_times.is_empty()
+			if field.indexed_frames:
+				for frame in field_entry.files.size():
+					field.bricks[frame] = IN_ZIP + field_entry.files[frame]
+			elif field.untimed:
+				field.bricks[0.0] = IN_ZIP + field_entry.step_files[0]
+			else:
+				for step in field_entry.step_files.size():
+					field.bricks[field_entry.step_times[step]] = IN_ZIP + field_entry.step_files[step]
+			model.fields.append(field)
+		# A flat ZIP can specify extra frames even when every part is static.
+		if meta.legacy and model.legacy_times.is_empty() and model.times() != entry.times:
+			var part := model.parts[0]
+			part.times = entry.times.duplicate()
+			part.files.clear()
+			for file in entry.parts[0].files:
+				part.files.append(IN_ZIP + file)
+		model.first_field = entry.first_field
+		for label_entry in entry.labels:
+			var label := PointLabel.new()
+			label.text = label_entry.text
+			label.position = label_entry.position
+			label.radius = label_entry.radius
+			model.labels.append(label)
+			label.span = model.span_of(label_entry.frames.x, label_entry.frames.y)
 		models.append(model)
-	for entry in meta.fields:
-		var field := Field.new()
-		field.name = entry.name
-		field.quantity = entry.quantity
-		field.unit = entry.unit
-		field.range = entry.range
-		field.cells = entry.cells
-		field.origin = entry.box.origin
-		# Keep the original factors; decomposing the box loses oblique/reflected
-		# axes and can change frame-consistency checks after reopening.
-		field.size = entry.size
-		field.axes = entry.axes
-		for frame in entry.files.size():
-			# Preserve every source brick, including explicit all-zero frames.
-			field.bricks[frame] = IN_ZIP + entry.files[frame]
-		fields.append(field)
-	first_field = meta.first_field
 	notes = decoded_notes.text
 	notes_path = meta.notes if not meta.notes.is_empty() else NOTES_FILE
 	var images_folder := notes_path.get_base_dir().path_join(IMAGES_FOLDER)
@@ -166,16 +267,25 @@ func close() -> void:
 	_zip_lock.unlock()
 
 
-## Adds the GLBs at [param paths] as models. GLBs named alike but for a
-## number, as EnSight writes one per time step, become one model with a GLB
-## per frame; any other becomes a model shown at every frame. Without frames
-## yet, the frames come from the GLBs' solver times. Returns an empty string,
-## or what is wrong with the GLBs.
-func add_glbs(paths: PackedStringArray) -> String:
+## Adds an empty model, named to stand apart from the others, and returns it.
+func add_model() -> Model:
+	var model := Model.new()
+	var number := models.size() + 1
+	model.name = "Model %d" % number
+	while models.any(func(other: Model) -> bool: return _folder(other.name) == _folder(model.name)):
+		number += 1
+		model.name = "Model %d" % number
+	models.append(model)
+	return model
+
+
+## Adds the GLBs at [param paths] to [param model] as parts. GLBs named alike
+## but for a number, as EnSight writes one per time step, become one part
+## that changes, at their solver times; any other becomes a part shown at
+## every frame. Returns an empty string, or what is wrong with the GLBs.
+func add_glbs(model: Model, paths: PackedStringArray) -> String:
 	if paths.is_empty():
 		return "Choose at least one GLB."
-	var frame_times_candidate := PackedFloat64Array() if auto_frame else times.duplicate()
-	var static_time := times[0] if not times.is_empty() else 0.0
 	var groups := {}
 	for file in paths:
 		var stem := file.get_file().get_basename().rstrip("0123456789").rstrip("_-. ")
@@ -184,13 +294,14 @@ func add_glbs(paths: PackedStringArray) -> String:
 		if not groups.has(stem):
 			groups[stem] = PackedStringArray()
 		groups[stem].append(file)
-	var added: Array[Model] = []
+	var added: Array[Part] = []
 	for stem: String in groups:
 		var files: PackedStringArray = groups[stem]
 		files.sort()
-		var model := Model.new()
-		model.name = stem
-		var frame_times := PackedFloat64Array()
+		var part := Part.new()
+		part.name = stem
+		var times := PackedFloat64Array()
+		var timed := true
 		for file in files:
 			var json := GLBInfo.json(FileAccess.get_file_as_bytes(file))
 			if json.is_empty():
@@ -198,66 +309,60 @@ func add_glbs(paths: PackedStringArray) -> String:
 			if GLBInfo.scene_count(json) > 1:
 				return "%s has a scene for each time step. Export a GLB for each time step instead." % file.get_file()
 			var time := GLBInfo.time(json)
-			frame_times.append(time if not is_nan(time) else frame_times.size())
-			model.files.append(file)
-		if model.changes():
-			if frame_times_candidate.is_empty():
-				frame_times_candidate = frame_times
-			elif frame_times_candidate.size() != model.files.size():
-				return "%s has %d GLBs, but there are %d frames." % [stem, model.files.size(), frame_times_candidate.size()]
-		elif added.is_empty():
-			static_time = frame_times[0]
-		added.append(model)
-	auto_frame = frame_times_candidate.is_empty()
-	if auto_frame:
-		frame_times_candidate.append(static_time)
-	times = frame_times_candidate
-	models.append_array(added)
+			timed = timed and not is_nan(time)
+			times.append(time)
+		part.files = files
+		if files.size() > 1:
+			# Without solver times, the steps are 0, 1, 2… in name order.
+			for index in times.size():
+				if not timed:
+					times[index] = index
+			part.times = times
+			_sort_steps(part)
+		added.append(part)
+	model.parts.append_array(added)
 	_bounds.clear()
 	return ""
 
 
-## Imports a complete, consistent batch before changing the draft. Existing
-## frames must match solver times exactly; no nearest-frame guesses or overwrites.
-func add_bovs(paths: PackedStringArray) -> String:
+## Orders a part's steps by time, in case its names didn't.
+static func _sort_steps(part: Part) -> void:
+	var order := range(part.files.size())
+	order.sort_custom(func(a: int, b: int) -> bool: return part.times[a] < part.times[b])
+	var files := PackedStringArray()
+	var times := PackedFloat64Array()
+	for index in order:
+		files.append(part.files[index])
+		times.append(part.times[index])
+	part.files = files
+	part.times = times
+
+
+## Adds the bricks whose headers are at [param paths] to [param model], as
+## a field per variable, each brick at its solver time: the steps can come
+## in any order, a few at a time. A brick at a time its field already has
+## replaces that one. Returns an empty string, or what is wrong with the
+## bricks.
+func add_bovs(model: Model, paths: PackedStringArray) -> String:
 	if paths.is_empty():
 		return "Choose at least one brick header."
-	var bovs := []
-	for file in paths:
-		var result := BOV.read_checked(file)
-		if not result.error.is_empty():
-			return result.error
-		bovs.append(result.value)
-	var candidate_times := PackedFloat64Array() if auto_frame else times.duplicate()
-	if candidate_times.is_empty():
-		var steps := {}
-		for bov in bovs:
-			steps[bov.time] = true
-		candidate_times = PackedFloat64Array(steps.keys())
-		candidate_times.sort()
-	for time in candidate_times:
-		if not is_finite(time):
-			return "Every frame needs a finite solver time."
 	var candidate_fields: Array[Field] = []
 	var by_name := {}
-	for existing in fields:
-		var error := ScalarData.validate_metadata(existing.range, existing.cells, _field_box(existing))
-		if not error.is_empty():
-			return "%s: %s" % [existing.name, error]
+	for existing in model.fields:
+		var problem := ScalarData.validate_metadata(existing.range, existing.cells, _field_box(existing))
+		if not problem.is_empty():
+			return "%s: %s" % [existing.name, problem]
 		if by_name.has(existing.name):
 			return "Two fields are named %s. Rename one before importing." % existing.name
 		var copied := _copy_field(existing)
 		candidate_fields.append(copied)
 		by_name[copied.name] = copied
-	for bov in bovs:
-		var frame := -1
-		for index in candidate_times.size():
-			if candidate_times[index] == bov.time:
-				if frame >= 0:
-					return "Solver time %s matches more than one frame. Give frames unique times before importing." % str(bov.time)
-				frame = index
-		if frame < 0:
-			return "Solver time %s has no matching frame. Add or edit the frame time before importing." % str(bov.time)
+	var added := {}
+	for file in paths:
+		var result := BOV.read_checked(file)
+		if not result.error.is_empty():
+			return result.error
+		var bov: BOV = result.value
 		var field: Field = by_name.get(bov.variable)
 		if field == null:
 			field = Field.new()
@@ -267,16 +372,27 @@ func add_bovs(paths: PackedStringArray) -> String:
 			field.origin = bov.origin
 			field.size = bov.size
 			field.axes = bov.axes
+			field.indexed_frames = not model.legacy_times.is_empty()
 			candidate_fields.append(field)
 			by_name[field.name] = field
 		elif field.cells != bov.cells or field.range != bov.range or _field_box(field) != Transform3D(bov.axes * Basis.from_scale(bov.size), bov.origin):
-			return "%s has a different grid, value range, or spatial box from %s. Import it as a separate field." % [bov.data.get_file(), field.name]
-		if field.bricks.has(frame):
-			return "%s already has data at solver time %s. No files were imported." % [field.name, str(bov.time)]
-		field.bricks[frame] = bov.data
-	times = candidate_times
-	fields = candidate_fields
-	auto_frame = false
+			return "%s has a different grid, value range, or spatial box from %s." % [bov.data.get_file(), field.name]
+		var key: Variant = field.key_for(bov.time)
+		if field.indexed_frames:
+			key = model.legacy_times.find(bov.time)
+			if key < 0 or model.legacy_times.count(bov.time) != 1:
+				return "Solver time %s must identify one frame in this legacy timeline." % bov.time
+		if not added.has(field.name):
+			added[field.name] = {}
+		if added[field.name].has(key):
+			return "Multiple input bricks for %s have the same solver time." % field.name
+		added[field.name][key] = true
+		if field.untimed:
+			if not field.indexed_frames:
+				field.bricks.clear()
+			field.untimed = false
+		field.bricks[key] = bov.data
+	model.fields = candidate_fields
 	return ""
 
 
@@ -290,6 +406,8 @@ static func _copy_field(source: Field) -> Field:
 	copied.origin = source.origin
 	copied.size = source.size
 	copied.axes = source.axes
+	copied.untimed = source.untimed
+	copied.indexed_frames = source.indexed_frames
 	copied.bricks = source.bricks.duplicate()
 	return copied
 
@@ -299,12 +417,12 @@ static func _field_box(field: Field) -> Transform3D:
 
 
 ## Grows or shrinks [param field]'s box about its center until it spans
-## the models along their longest side. EnSight doesn't say what scale it
-## writes bricks at, and it isn't the geometry's: the Hall sensor's brick
-## says it is 40 across, around a model 80 across. Does nothing without
-## models.
-func fit_field(field: Field) -> void:
-	var bounds := model_bounds()
+## [param model]'s parts along their longest side. EnSight doesn't say what
+## scale it writes bricks at, and it isn't the geometry's: the Hall sensor's
+## brick says it is 40 across, around a model 80 across. Does nothing
+## without parts.
+func fit_field(model: Model, field: Field) -> void:
+	var bounds := model_bounds(model)
 	if not bounds.has_volume():
 		return
 	var axis := bounds.size.max_axis_index()
@@ -316,11 +434,11 @@ func fit_field(field: Field) -> void:
 	field.origin = center - field.size * 0.5
 
 
-## The bounds of every model's first GLB, together.
-func model_bounds() -> AABB:
+## The bounds of each of [param model]'s parts' first GLB, together.
+func model_bounds(model: Model) -> AABB:
 	var bounds := AABB()
-	for model in models:
-		var source := model.files[0]
+	for part in model.parts:
+		var source := part.files[0]
 		if not _bounds.has(source):
 			_bounds[source] = GLBInfo.bounds(GLBInfo.json(read_source(source)))
 		bounds = GLBInfo.merge(bounds, _bounds[source])
@@ -352,21 +470,19 @@ func read_source(source: String) -> PackedByteArray:
 	return FileAccess.get_file_as_bytes(source)
 
 
-## The verified scalar bytes for one current draft frame, including edits that
-## have not been saved. Unassigned frames explicitly contain only missing data.
-func read_brick_checked(field: Field, frame: int) -> Dictionary:
+## Read the step displayed at a solver time, or the exact frame for legacy
+## ZIPs whose timeline cannot identify a unique frame by time.
+func read_brick_checked(field: Field, time: float, frame := -1) -> Dictionary:
 	var error := ScalarData.validate_metadata(field.range, field.cells, _field_box(field))
 	if not error.is_empty():
 		return {bytes = PackedByteArray(), error = error}
-	if frame < 0 or frame >= times.size():
-		return {bytes = PackedByteArray(), error = "The requested frame does not exist."}
 	var expected := ScalarData.cell_count(field.cells)
+	var source := field.source_at(time, frame)
 	var bytes := PackedByteArray()
-	if not field.bricks.has(frame):
-		if bytes.resize(expected) != OK:
-			return {bytes = PackedByteArray(), error = "Not enough memory for the missing scalar frame."}
-		return {bytes = bytes, error = ""}
-	var source: String = field.bricks[frame]
+	if source.is_empty():
+		if field.indexed_frames and frame >= 0 and bytes.resize(expected) == OK:
+			return {bytes = bytes, error = ""}
+		return {bytes = bytes, error = "The requested scalar step is unavailable."}
 	if source.begins_with(IN_ZIP):
 		var path := source.trim_prefix(IN_ZIP)
 		_zip_lock.lock()
@@ -398,11 +514,12 @@ func source_zip_path() -> String:
 func source_files() -> PackedStringArray:
 	var paths := {}
 	for model in models:
-		for path in model.files:
-			paths[path] = true
-	for field in fields:
-		for path in field.bricks.values():
-			paths[path] = true
+		for part in model.parts:
+			for path in part.files:
+				paths[path] = true
+		for field in model.fields:
+			for path in field.bricks.values():
+					paths[path] = true
 	for path in images.values():
 		paths[path] = true
 	for path in attachments.values():
@@ -470,29 +587,53 @@ static func _decode_notes(bytes: PackedByteArray) -> Dictionary:
 
 ## What keeps the draft from being saved, or an empty string.
 func problems() -> String:
-	if times.is_empty():
-		return "Add a frame, or import GLBs or bricks that have solver times."
-	for time in times:
-		if not is_finite(time):
-			return "Every frame needs a finite solver time."
 	if models.is_empty():
-		return "Import a GLB."
+		return "Add a model."
+	var model_names := {}
 	for model in models:
-		if model.name.strip_edges().is_empty() or model.files.is_empty():
-			return "A model needs a name and a GLB."
-		if model.changes() and model.files.size() != times.size():
-			return "%s has %d GLBs, but there are %d frames." % [model.name, model.files.size(), times.size()]
-	for field in fields:
-		if field.name.strip_edges().is_empty():
-			return "A field has no name."
-		var error := ScalarData.validate_metadata(field.range, field.cells, _field_box(field))
-		if not error.is_empty():
-			return "%s: %s" % [field.name, error]
-		for frame in field.bricks:
-			if not frame is int or frame < 0 or frame >= times.size():
-				return "%s has data assigned to a nonexistent frame." % field.name
-			if not field.bricks[frame] is String or field.bricks[frame].is_empty():
-				return "%s has an invalid brick source." % field.name
+		if model.name.strip_edges().is_empty():
+			return "A model has no name."
+		if model_names.has(_folder(model.name)):
+			return "Two models are both named %s." % model.name
+		model_names[_folder(model.name)] = true
+		if model.parts.is_empty():
+			return "%s has no parts: import a GLB." % model.name
+		if not model.legacy_times.is_empty() and (models.size() != 1 or not model.labels.is_empty()):
+			return "This legacy frame order cannot represent extra volumes or labels without changing its frames."
+		var names := {}
+		for part in model.parts:
+			if part.name.strip_edges().is_empty():
+				return "A part of %s has no name." % model.name
+			if part.files.is_empty() or (part.changes() and part.files.size() != part.times.size()):
+				return "%s needs a GLB for each step." % part.name
+			if not model.legacy_times.is_empty() and part.changes() and part.times != model.legacy_times:
+				return "%s needs the original frame times in this legacy ZIP." % part.name
+			for time in part.times:
+				if not is_finite(time):
+					return "Every solver time must be finite."
+			if names.has(_folder(part.name)):
+				return "%s has two parts named %s." % [model.name, part.name]
+			names[_folder(part.name)] = true
+		names.clear()
+		for field in model.fields:
+			if field.name.strip_edges().is_empty():
+				return "A field of %s has no name." % model.name
+			var error := ScalarData.validate_metadata(field.range, field.cells, _field_box(field))
+			if not error.is_empty():
+				return "%s: %s" % [field.name, error]
+			for time in field.bricks:
+				if not (time is float or time is int) or not is_finite(float(time)):
+					return "%s has an invalid solver time." % field.name
+				if not field.bricks[time] is String or field.bricks[time].is_empty():
+					return "%s has an invalid brick source." % field.name
+			if field.bricks.is_empty():
+				return "%s has no bricks." % field.name
+			if names.has(_folder(field.name)):
+				return "%s has two fields named %s." % [model.name, field.name]
+			names[_folder(field.name)] = true
+		var problem := label_problems(model)
+		if not problem.is_empty():
+			return problem
 	var plan := _plan()
 	if not plan.error.is_empty():
 		return plan.error
@@ -522,44 +663,87 @@ func problems() -> String:
 	return ""
 
 
-## Plan archive names before writing, catching collisions across all file roles.
+
+func label_problems(model: Model) -> String:
+	for label in model.labels:
+		if label.text.strip_edges().is_empty():
+			return "A label of %s has no text." % model.name
+		if not label.position.is_finite() or not is_finite(label.radius) or label.radius < 0.0:
+			return "A label needs a finite position and a nonnegative radius."
+		var frames := model.label_frames(label)
+		if frames.y < frames.x:
+			return "The label %s shows at none of %s's frames." % [label.title(), model.name]
+	return ""
+
+
+## Plan all entries before writing so attachments cannot collide with generated names.
 func _plan() -> Dictionary:
-	var manifest := {title = title, frames = [], models = [], fields = []}
-	var sources := {}
+	var manifest := {title = title, models = []}
 	var generated := {}
 	var seen := {Meta.MANIFEST.to_lower(): true}
-	var plan := {manifest = manifest, sources = sources, generated = generated, error = ""}
-	for time in times:
-		manifest.frames.append({time = time})
+	var plan := {manifest = manifest, sources = {}, generated = generated, error = ""}
 	for model in models:
-		var folder := "models/%s" % _folder(model.name)
-		if model.changes():
-			for frame in model.files.size():
-				_plan_file(plan, seen, "%s/%04d.glb" % [folder, frame + 1], model.files[frame])
-			manifest.models.append({name = model.name, path = folder})
-		else:
-			if not model.files.is_empty():
-				_plan_file(plan, seen, folder + ".glb", model.files[0])
-			manifest.models.append({name = model.name, path = folder + ".glb"})
-	for field in fields:
-		var folder := "fields/%s" % _folder(field.name)
-		for frame in times.size():
-			var file := "%s/%04d.bin" % [folder, frame + 1]
-			if field.bricks.has(frame):
-				_plan_file(plan, seen, file, field.bricks[frame])
+		var model_folder := "%s/%s" % [MODELS_FOLDER, _folder(model.name)]
+		var entry := {name = model.name, parts = [], fields = []}
+		var flat := not model.legacy_times.is_empty()
+		if flat:
+			manifest.frames = []
+			for time in model.legacy_times:
+				manifest.frames.append({time = time})
+			manifest.fields = entry.fields
+		for part in model.parts:
+			var path := "%s/parts/%s" % [model_folder, _folder(part.name)]
+			if part.changes():
+				for step in part.files.size():
+					_plan_file(plan, seen, "%s/%04d.glb" % [path, step + 1], part.files[step])
+				entry.parts.append({name = part.name, path = path, times = Array(part.times)})
 			else:
-				_plan_file(plan, seen, file, "")
-				# Store a length, allocating missing scalar bricks one at a time.
-				generated[file] = field.cells.x * field.cells.y * field.cells.z
-		manifest.fields.append({
-			name = field.name, quantity = field.quantity, unit = field.unit,
-			range = [field.range.x, field.range.y],
-			cells = [field.cells.x, field.cells.y, field.cells.z],
-			box = {origin = _array(field.origin), size = _array(field.size), axes = [_array(field.axes.x), _array(field.axes.y), _array(field.axes.z)]},
-			path = folder,
-		})
-	if not fields.is_empty():
-		manifest.field = fields[clampi(first_field, 0, fields.size() - 1)].name
+				_plan_file(plan, seen, path + ".glb", part.files[0])
+				entry.parts.append({name = part.name, path = path + ".glb"})
+		for field in model.fields:
+			var path := "%s/fields/%s" % [model_folder, _folder(field.name)]
+			var times: Array = range(model.legacy_times.size()) if flat else field.bricks.keys()
+			times.sort()
+			if field.untimed:
+				path += ".bin"
+				_plan_file(plan, seen, path, field.bricks[times[0]])
+			else:
+				for step in times.size():
+					var file := "%s/%04d.bin" % [path, step + 1]
+					_plan_file(plan, seen, file, field.bricks.get(times[step], ""))
+					if not field.bricks.has(times[step]):
+						generated[file] = ScalarData.cell_count(field.cells)
+			entry.fields.append({
+				name = field.name,
+				quantity = field.quantity,
+				unit = field.unit,
+				range = [field.range.x, field.range.y],
+				cells = [field.cells.x, field.cells.y, field.cells.z],
+				box = {origin = _array(field.origin), size = _array(field.size), axes = [_array(field.axes.x), _array(field.axes.y), _array(field.axes.z)]},
+				path = path,
+			})
+			if not flat and not field.untimed:
+				entry.fields[-1].times = times
+		if not model.fields.is_empty():
+			entry.field = model.fields[clampi(model.first_field, 0, model.fields.size() - 1)].name
+		var frame_count := model.times().size()
+		if not model.labels.is_empty():
+			entry.labels = []
+		for label in model.labels:
+			var label_entry := {text = label.text.strip_edges(), position = _array(label.position)}
+			if label.radius > 0.0:
+				label_entry.radius = label.radius
+			var frames := model.label_frames(label)
+			if frames != Vector2i(0, frame_count - 1):
+				label_entry.frames = [frames.x + 1, frames.y + 1]
+			entry.labels.append(label_entry)
+		if flat:
+			for part: Dictionary in entry.parts:
+				manifest.models.append({name = part.name, path = part.path})
+			if entry.has("field"):
+				manifest.field = entry.field
+		else:
+			manifest.models.append(entry)
 	if not notes.is_empty():
 		_plan_file(plan, seen, notes_path, "")
 		generated[notes_path] = notes.to_utf8_buffer()

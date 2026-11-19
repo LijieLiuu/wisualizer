@@ -1,10 +1,11 @@
 extends MarginContainer
 ## The app's first window: a library of the ZIPs added so far. Each ZIP opens
-## in its own document windows, so several can be open at once.
+## a volume per model, so several can be open at once.
 
 const Document := preload("res://app/document.tscn")
 const Workspace := preload("res://app/workspace.tscn")
 const Meta := preload("res://app/meta.gd")
+const Playback := preload("res://app/playback.gd")
 const NativeDialogs := preload("res://app/native_dialogs.gd")
 ## Added ZIPs are copied here, so they can be opened again after the app
 ## restarts without access to where they came from.
@@ -102,11 +103,36 @@ func open_zip(path: String) -> void:
 		opened.save(OPENED_FILE)
 		show_library()
 
-	var document := Document.instantiate()
-	add_child(document)
-	var error: String = document.open(path)
+	# A volume for each of its models, side by side and playing by one clock;
+	# the first has the notes.
+	var check := Meta.new()
+	var error := check.open(path)
 	if not error.is_empty():
-		document.queue_free()
+		check.close()
+		show_error("Can't open %s" % path.get_file().get_basename(), error)
+		return
+	var count := check.models.size()
+	var clock := Playback.new()
+	var times := PackedFloat64Array()
+	for model in check.models:
+		times.append_array(model.times)
+	# Old single-volume archives can deliberately repeat solver times or play
+	# them out of order. The frame index identifies each step in those files.
+	clock.times = times if check.legacy else Meta.timeline(times)
+	add_child(clock)
+	check.close()
+	var previous: Window = null
+	for index in count:
+		var document := Document.instantiate()
+		add_child(document)
+		error = document.open(path, index, index == 0, previous, clock)
+		if not error.is_empty():
+			document.queue_free()
+			break
+		previous = document.model
+	if previous == null:
+		clock.queue_free()
+	if not error.is_empty():
 		show_error("Can't open %s" % path.get_file().get_basename(), error)
 
 
