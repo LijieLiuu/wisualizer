@@ -172,6 +172,76 @@ func _event(kind: String, pressed := true) -> InputEvent:
 	return event
 
 
+func _pick_field(document: Node, index: int) -> void:
+	for button in document.get_node("Model/Options/Bar").get_children():
+		if button.has_meta("field_index") and button.get_meta("field_index") == index:
+			button.pressed.emit()
+			return
+	_check(false, "The team's normal field picker contains the requested field")
+
+
+func _lifecycle(document: Node, api: Api) -> void:
+	api.presented = true
+	var tools := _tools(document)
+	_check(tools.start(document).is_empty(), "A/B tools reopen in the existing presented host after native presentation recovers")
+	var pins: Dictionary = document.inspection.get_committed_points()
+	tools._notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	tools.pin(0)
+	tools._process(100.0)
+	_check(not tools.live_sample.valid and document.inspection.get_committed_points() == pins and not tools._closed, "Backgrounding suppresses pinning without consuming the opening timeout or losing committed pins")
+	tools._notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	_put(document, "left", INDEX, Vector3(0.625, 0.5, 0.5))
+	tools._process(0.0)
+	_check(tools.live_sample.valid, "Foregrounding reacquires a freshly validated fingertip")
+	var near_size: float = document.volume.size
+	_pick_field(document, 1)
+	_check(document.field_index == 1 and document.inspection.get_committed_points().is_empty(), "The team's field picker switches fields and clears prior-field pins while only hand tools are open")
+	_check(document.volume.size > near_size * 10.0, "Selecting a distant field fits it into the existing host while A/B tools are open")
+	_put(document, "left", INDEX, Vector3(0.625, 0.5, 0.5))
+	tools.get_node("%PinA").pressed.emit()
+	_check(tools.pinned_readout.text.contains("Temperature") and document.inspection.get_committed_points().has(0), "The selected distant field can be pinned through the real Pin A action")
+	_pick_field(document, 0)
+	_check(is_equal_approx(document.volume.size, near_size) and document.inspection.get_committed_points().is_empty(), "The same picker returns to the original field fit without retaining unrelated pins")
+	_pick_field(document, 1)
+	# Keep this setup explicit so the shutdown assertion independently tests
+	# restoration even if the field-change fit assertion fails.
+	document.fit()
+	var far_size: float = document.volume.size
+	document.get_node("%Hands").pressed.emit()
+	_check(document.hand_workbench == null and document.volume.is_immersive() and document.volume.size < far_size * 0.1, "Toggling A/B tools off restores the team model fit while leaving its immersive host open")
+	await _settle()
+	_pick_field(document, 0)
+	document.volume.set_immersive(false)
+	api.presented = false
+	tools = _tools(document)
+	_check(tools.start(document).is_empty(), "A/B tools can reenter after returning to the regular volume")
+	var failures: Array[String] = []
+	tools.failed.connect(func(message: String): failures.append(message))
+	tools._notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	tools._process(100.0)
+	_check(document.volume.is_immersive() and not tools._closed, "Opening remains pending throughout an application pause")
+	tools._notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	tools._process(16.0)
+	_check(tools._closed and not document.volume.is_immersive() and failures.size() == 1 and document.hand_workbench == null, "A real presentation timeout releases the owner and reports exactly one failure")
+	await _settle()
+	tools = _tools(document)
+	_check(tools.start(document).is_empty(), "Retry after presentation timeout reacquires the same model host")
+	document.show_options(false)
+	api.presented = true
+	tools._process(16.0)
+	_check(document.volume.is_immersive() and not tools._closed, "A presented space is acknowledged even when Options was hidden during opening")
+	# Continue cleanup on both sides of the regression until it is fixed.
+	if not tools._closed:
+		document.show_options(true)
+		_put(document, "left", INDEX, Vector3(0.625, 0.5, 0.5))
+		tools._process(0.0)
+		_check(tools.live_sample.valid, "Reopening Options resumes current sampling in the same space")
+		document.immersive_button.set_pressed(false)
+		await _settle()
+		_check(document.hand_workbench == null and not document.volume.is_immersive(), "The team's immersive button closes hand tools when returning to the regular volume")
+	await _settle()
+
+
 func _run() -> void:
 	_document_scene = load("res://app/document.tscn")
 	_tools_scene = load("res://app/hand_workbench.tscn")
@@ -268,6 +338,7 @@ func _run() -> void:
 	tools._process(0.0)
 	_check(tools._closed and document.hand_workbench == null and document.inspection.get_committed_points() == pins, "Lost native presentation closes only A/B controls and retains committed pins")
 	await _settle()
+	await _lifecycle(document, api)
 	document.volume.set_immersive(false)
 	api.revision = 1
 	document.volume.set_immersive(true)

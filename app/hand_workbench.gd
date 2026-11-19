@@ -94,9 +94,13 @@ func _update() -> void:
 		_pinned_revision = document.touch.revision
 		_points = points
 	live_sample = {valid = false, unit = Vector3.ZERO, reason = "Waiting for the model's immersive space."}
-	if not _suspended and document.model.visible and document.options.visible and document.volume.is_hand_tracking_presented():
+	var presented: bool = document.model.visible and document.volume.is_hand_tracking_presented()
+	# The Options panel may be hidden while the native space finishes opening.
+	# Presentation belongs to the shared host, independently of this panel.
+	if not _suspended and presented:
 		_presented = true
 		_opening_elapsed = 0.0
+	if not _suspended and presented and document.options.visible:
 		var hand := XRServer.get_tracker(TRACKERS[selected_hand]) as XRHandTracker
 		var pose: Transform3D = document.volume.get_hand_joint(hand, selected_joint)
 		var snapshot := {tracked = pose.is_finite(), joints = {selected_joint: pose.origin}}
@@ -106,7 +110,7 @@ func _update() -> void:
 			live_sample.reason = "This field's axes cannot be sampled faithfully by the native renderer."
 	elif _suspended:
 		live_sample.reason = "Hand inspection paused."
-	elif _presented and not document.volume.is_hand_tracking_presented():
+	elif _presented and not presented:
 		stop()
 		return
 	var text := str(live_sample.reason)
@@ -172,5 +176,6 @@ func stop() -> void:
 		document.probes.selected_hand = ""
 		document.hand_workbench = null
 		document.update_field()
+		document.fit()
 		document._resize_probe_options.call_deferred()
 	queue_free()

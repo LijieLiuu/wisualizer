@@ -53,7 +53,9 @@ Binaries, SDKs, generated Xcode projects and signing settings stay local.
 Open a model with a scalar field on Vision Pro and choose **Options → Track
 fingers…**. This enters the model's immersive space or uses it if already open.
 The model keeps its drag handle, rotation, field picker, playback controls and
-fingertip sound. The hand controls appear below the field picker in Options.
+fingertip sound. The hand controls appear below the field picker in Options. Opening them
+pauses the ZIP’s shared playback clock so the first pin can be placed on a
+stationary frame. Use the existing play button to resume.
 Choose **Track fingers…** again to close those controls. The library's **Settings**
 window controls debug markers and the sounds under the two index fingers.
 

@@ -438,7 +438,7 @@ func update_field() -> void:
 		set_probe_mode(false)
 		return
 	touch.set_brick(meta.read(current.files[frame]), current.cells, current.peak if current.peak > 0 else 255)
-	if field_changed and (probing or history.visible):
+	if field_changed and (probing or history.visible or is_instance_valid(hand_workbench)):
 		fit()
 	_refresh_inspection()
 
